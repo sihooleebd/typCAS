@@ -63,6 +63,8 @@
     let b = eval-expr(expr.base, bindings)
     let e = eval-expr(expr.exp, bindings)
     if b == none or e == none { return none }
+    // Avoid non-real result panic
+    if b < 0 and type(e) == float and calc.fract(e) != 0.0 { return none }
     return calc.pow(b, e)
   }
 
@@ -108,19 +110,53 @@
     if expr.name == "coth" {
       let ep = calc.exp(a)
       let em = calc.exp(-a)
-      return (ep + em) / (ep - em)
+      let den = ep - em
+      if den == 0 { return none }
+      return (ep + em) / den
     }
 
     // Inverse hyperbolic
-    if expr.name == "arcsinh" { return calc.ln(a + calc.sqrt(a * a + 1.0)) }
-    if expr.name == "arccosh" { return calc.ln(a + calc.sqrt(a * a - 1.0)) }
-    if expr.name == "arctanh" { return 0.5 * calc.ln((1.0 + a) / (1.0 - a)) }
-    if expr.name == "arccsch" { return calc.ln(1.0 / a + calc.sqrt(1.0 / (a * a) + 1.0)) }
-    if expr.name == "arcsech" { return calc.ln(1.0 / a + calc.sqrt(1.0 / (a * a) - 1.0)) }
-    if expr.name == "arccoth" { return 0.5 * calc.ln((a + 1.0) / (a - 1.0)) }
+    if expr.name == "arcsinh" {
+      let val = a + calc.sqrt(a * a + 1.0)
+      if val <= 0 { return none }
+      return calc.ln(val)
+    }
+    if expr.name == "arccosh" {
+      if a < 1 { return none } // Argument to sqrt must be >= 0, and then argument to ln must be > 0
+      let val = a + calc.sqrt(a * a - 1.0)
+      if val <= 0 { return none }
+      return calc.ln(val)
+    }
+    if expr.name == "arctanh" {
+      let arg = (1.0 + a) / (1.0 - a)
+      if arg <= 0 { return none } // Argument to ln must be > 0
+      if a <= -1 or a >= 1 { return none } // Denominator (1-a) cannot be 0, and arg must be > 0
+      return 0.5 * calc.ln(arg)
+    }
+    if expr.name == "arccsch" {
+      if a == 0 { return none } // Division by zero
+      let val = 1.0 / a + calc.sqrt(1.0 / (a * a) + 1.0)
+      if val <= 0 { return none }
+      return calc.ln(val)
+    }
+    if expr.name == "arcsech" {
+      if a <= 0 or a > 1 { return none } // Argument to sqrt must be >= 0, and then argument to ln must be > 0
+      let val = 1.0 / a + calc.sqrt(1.0 / (a * a) - 1.0)
+      if val <= 0 { return none }
+      return calc.ln(val)
+    }
+    if expr.name == "arccoth" {
+      let arg = (a + 1.0) / (a - 1.0)
+      if arg <= 0 { return none } // Argument to ln must be > 0
+      if a == 1 or a == -1 { return none } // Denominators cannot be 0
+      return 0.5 * calc.ln(arg)
+    }
 
     // Other
-    if expr.name == "ln" { return calc.ln(a) }
+    if expr.name == "ln" {
+      if a <= 0 { return none }
+      return calc.ln(a)
+    }
     if expr.name == "exp" { return calc.exp(a) }
     if expr.name == "abs" { return calc.abs(a) }
 
