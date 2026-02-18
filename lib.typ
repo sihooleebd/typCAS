@@ -1,7 +1,7 @@
 // =========================================================================
-// typst-CAS — A Lightweight Computer Algebra System for Typst
+// typcas — A Lightweight Computer Algebra System for Typst
 // =========================================================================
-// Single entry point: #import "typst-CAS/lib.typ": *
+// Single entry point: #import "typcas/lib.typ": *
 // =========================================================================
 
 // --- Core expression constructors ---

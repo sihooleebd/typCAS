@@ -1,5 +1,5 @@
 [package]
-name = "typst-cas"
+name = "typcas"
 version = "0.1.0"
 entrypoint = "lib.typ"
 authors = ["Benjamin Lee <sihooleebd@gmail.com>"]

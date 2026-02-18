@@ -1,5 +1,5 @@
 // =========================================================================
-// typst-CAS Test & Demo
+// typcas Test & Demo
 // =========================================================================
 #import "lib.typ": *
 
@@ -7,7 +7,7 @@
 #set text(font: "New Computer Modern", size: 11pt)
 
 #align(center)[
-  #text(size: 18pt, weight: "bold")[typst-CAS Test Suite]
+  #text(size: 18pt, weight: "bold")[typcas Test Suite]
   #v(0.3em)
   #text(size: 10pt, fill: gray)[A Lightweight Computer Algebra System for Typst]
 ]
