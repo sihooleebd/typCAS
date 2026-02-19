@@ -6,7 +6,7 @@
 // =========================================================================
 
 #import "../expr.typ": *
-#import "../truths/function-registry.typ": fn-known-names, fn-canonical, fn-spec, fn-arity-ok
+#import "../truths/function-registry.typ": fn-canonical, fn-spec
 
 // =========================================================================
 // Phase 1: Tokenizer
@@ -20,6 +20,12 @@
   let code = str.to-unicode(c)
   (code >= 65 and code <= 90) or (code >= 97 and code <= 122)
 }
+
+/// Internal helper `_is-ident-start`.
+#let _is-ident-start(c) = _is-alpha(c)
+
+/// Internal helper `_is-ident-char`.
+#let _is-ident-char(c) = _is-alpha(c) or _is-digit(c)
 
 /// Internal helper `_tokenize`.
 #let _tokenize(s) = {
@@ -50,9 +56,9 @@
     }
 
     // Identifiers
-    if _is-alpha(c) {
+    if _is-ident-start(c) {
       let start = i
-      while i < len and _is-alpha(chars.at(i)) { i += 1 }
+      while i < len and _is-ident-char(chars.at(i)) { i += 1 }
       tokens.push((type: "ident", val: chars.slice(start, i).join()))
       continue
     }
@@ -120,9 +126,6 @@
 // Phase 2: Recursive Descent Parser
 // =========================================================================
 
-/// Internal helper `_known-fns`.
-#let _known-fns = fn-known-names + ("sqrt", "log", "frac", "root")
-
 /// Internal helper `_pk`.
 #let _pk(tokens, pos) = if pos < tokens.len() { tokens.at(pos) } else { none }
 
@@ -134,6 +137,27 @@
 
 /// Internal helper `_numval`.
 #let _numval(s) = if s.contains(".") { float(s) } else { int(s) }
+
+/// Internal helper `_subscript-piece`.
+/// Convert a parsed subscript atom to a safe variable-name suffix.
+#let _subscript-piece(expr) = {
+  if is-type(expr, "num") {
+    if type(expr.val) == int { return str(expr.val) }
+    if calc.abs(expr.val - calc.round(expr.val)) < 1e-10 {
+      return str(int(calc.round(expr.val)))
+    }
+    return none
+  }
+  if is-type(expr, "var") or is-type(expr, "const") {
+    return expr.name
+  }
+  if is-type(expr, "neg") and is-type(expr.arg, "num") {
+    if type(expr.arg.val) == int {
+      return "-" + str(expr.arg.val)
+    }
+  }
+  none
+}
 
 /// Internal helper `_bind-index-symbol`.
 /// Rebinds occurrences of a bound index symbol parsed as a constant
@@ -221,7 +245,9 @@
 /// Internal helper `_parse-atom`.
 #let _parse-atom(tokens, pos, p) = {
   let tok = _pk(tokens, pos)
-  if tok == none { return (num(0), pos) }
+  if tok == none {
+    panic("cas-parse: unexpected end of input")
+  }
 
   if tok.type == "num" { return (num(_numval(tok.val)), pos + 1) }
 
@@ -322,6 +348,18 @@
       return (log-of(base, arg), q2)
     }
 
+    // Generic variable subscript: x_1, a_i, theta_n.
+    // Keep special underscore semantics above for log/sum/product.
+    if name != "sum" and name != "product" and name != "log" and _is-op(tokens, pos + 1, "_") {
+      let (sub-atom, q) = (p.atom)(tokens, pos + 2, p)
+      let suffix = _subscript-piece(sub-atom)
+      if suffix != none and suffix != "" {
+        return (cvar(name + "_" + suffix), q)
+      }
+      // Malformed/unsupported subscript suffix: consume base token only.
+      return (cvar(name), pos + 1)
+    }
+
     // Implicit unary function application with optional exponent:
     // sec^2 x -> (sec(x))^2, ln x -> ln(x)
     // Compatibility: log x => ln(x)
@@ -356,7 +394,7 @@
     }
 
     // Function call (ident followed by '(')
-    if next != none and next.type == "lparen" and name in _known-fns {
+    if next != none and next.type == "lparen" {
       if name == "frac" {
         let (n, q) = (p.expr)(tokens, pos + 2, p)
         if q < tokens.len() and _pk(tokens, q).type == "comma" { q += 1 }
@@ -389,13 +427,21 @@
         return (func("ln", first), q)
       }
 
+      let (args, q) = _parse-call-args(tokens, pos + 1, p)
+      if args == none {
+        // Ensure forward progress for malformed function-call syntax.
+        return (num(0), calc.max(q, pos + 1))
+      }
+
       let canonical = fn-canonical(name)
       let spec = fn-spec(name)
       if canonical != none and spec != none {
-        let (args, q) = _parse-call-args(tokens, pos + 1, p)
-        if args == none or not fn-arity-ok(spec, args.len()) { return (num(0), pos) }
+        // Keep canonical form even on arity mismatch so parsing is stable.
         return (func(canonical, ..args), q)
       }
+
+      // Unknown function names stay as symbolic function calls.
+      return (func(name, ..args), q)
     }
 
     // Constants
@@ -408,7 +454,7 @@
     return (cvar(name), pos + 1)
   }
 
-  (num(0), pos + 1)
+  panic("cas-parse: unexpected token " + repr(tok))
 }
 
 /// Internal helper `_parse-power`.
@@ -440,12 +486,14 @@
   while q < tokens.len() {
     if _is-op(tokens, q, "*") {
       let (right, q2) = _parse-unary(tokens, q + 1, p)
+      if q2 <= q { break }
       result = mul(result, right)
       q = q2
       continue
     }
     if _is-op(tokens, q, "/") {
       let (right, q2) = _parse-unary(tokens, q + 1, p)
+      if q2 <= q { break }
       result = cdiv(result, right)
       q = q2
       continue
@@ -454,6 +502,7 @@
     let tok = _pk(tokens, q)
     if tok.type == "num" or tok.type == "ident" or tok.type == "lparen" {
       let (right, q2) = _parse-power(tokens, q, p)
+      if q2 <= q { break }
       result = mul(result, right)
       q = q2
       continue
@@ -469,12 +518,14 @@
   while q < tokens.len() {
     if _is-op(tokens, q, "+") {
       let (right, q2) = _parse-term(tokens, q + 1, p)
+      if q2 <= q { break }
       result = add(result, right)
       q = q2
       continue
     }
     if _is-op(tokens, q, "-") {
       let (right, q2) = _parse-term(tokens, q + 1, p)
+      if q2 <= q { break }
       if is-type(right, "num") { result = add(result, num(-right.val)) } else { result = add(result, neg(right)) }
       q = q2
       continue
@@ -666,6 +717,9 @@
   }
 
   if tokens.len() == 0 { return num(0) }
-  let (result, _) = _parse-expr(tokens, 0, _parser)
+  let (result, end) = _parse-expr(tokens, 0, _parser)
+  if end < tokens.len() {
+    panic("cas-parse: unparsed trailing tokens starting at " + repr(tokens.at(end)))
+  }
   result
 }

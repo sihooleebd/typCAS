@@ -7,6 +7,7 @@
 #import "../poly.typ": partial-fractions as _partial-fractions, poly-coeffs as _poly-coeffs
 #import "../helpers.typ": check-free-var as _check-free-var
 #import "../truths/calculus-rules.typ": calc-rules
+#import "../truths/function-registry.typ": fn-canonical, fn-square-power-integral-spec
 #import "../core/expr-walk.typ": contains-var as _contains-var-core
 #import "diff.typ": diff
 
@@ -35,7 +36,7 @@
   if is-type(expr, "pow") and is-type(expr.base, "var") and expr.base.name == v and is-type(expr.exp, "num") {
     return type(expr.exp.val) == int and expr.exp.val >= 1
   }
-  if is-type(expr, "func") and expr.name == "ln" and func-arity(expr) == 1 and is-type(func-args(expr).at(0), "var") and func-args(expr).at(0).name == v {
+  if is-type(expr, "func") and fn-canonical(expr.name) == "ln" and func-arity(expr) == 1 and is-type(func-args(expr).at(0), "var") and func-args(expr).at(0).name == v {
     return true
   }
   false
@@ -227,25 +228,16 @@
     // ∫sech(u)^2 dx = tanh(u)/u'
     // ∫csch(u)^2 dx = -coth(u)/u'
     if is-type(exp, "num") and exp.val == 2 and is-type(base, "func") {
-      if base.name == "sec" or base.name == "csc" or base.name == "sech" or base.name == "csch" {
-        if func-arity(base) == 1 {
-          let inner = func-args(base).at(0)
-          let du = simplify(diff(inner, v))
-          if not _contains-var(du, v) and not expr-eq(du, num(0)) {
-            let antideriv = if base.name == "sec" {
-              tan-of(inner)
-            } else if base.name == "csc" {
-              neg(cot-of(inner))
-            } else if base.name == "sech" {
-              tanh-of(inner)
-            } else {
-              neg(coth-of(inner))
-            }
-            if is-type(du, "num") and du.val == 1 {
-              return antideriv
-            }
-            return cdiv(antideriv, du)
+      let square-rule = fn-square-power-integral-spec(base.name)
+      if square-rule != none and func-arity(base) == 1 {
+        let inner = func-args(base).at(0)
+        let du = simplify(diff(inner, v))
+        if not _contains-var(du, v) and not expr-eq(du, num(0)) {
+          let antideriv = (square-rule.antideriv)(inner)
+          if is-type(du, "num") and du.val == 1 {
+            return antideriv
           }
+          return cdiv(antideriv, du)
         }
       }
     }
@@ -300,7 +292,7 @@
     let n = expr.num
     let d = expr.den
     if is-type(n, "num") and n.val == 1 and is-type(d, "pow") {
-      if is-type(d.base, "func") and d.base.name == "cos" and is-type(d.exp, "num") and d.exp.val == 2 {
+      if is-type(d.base, "func") and fn-canonical(d.base.name) == "cos" and is-type(d.exp, "num") and d.exp.val == 2 {
         if func-arity(d.base) == 1 {
           let inner = func-args(d.base).at(0)
           let du = simplify(diff(inner, v))

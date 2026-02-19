@@ -231,9 +231,9 @@
       calc.asin(1.0 / a)
     },
     calculus: (
-      diff: u => neg(cdiv(num(1), mul(u, sqrt-of(sub(pow(u, num(2)), num(1)))))),
+      diff: u => neg(cdiv(num(1), mul(abs-of(u), sqrt-of(sub(pow(u, num(2)), num(1)))))),
       integ: none,
-      diff-step: "d/dx arccsc(@) = -@'/(@√(@²-1))",
+      diff-step: "d/dx arccsc(@) = -@'/(|@|√(@²-1))",
       domain-note: "Real-domain derivative requires |@| > 1.",
     ),
   ),
@@ -249,9 +249,9 @@
       calc.acos(1.0 / a)
     },
     calculus: (
-      diff: u => cdiv(num(1), mul(u, sqrt-of(sub(pow(u, num(2)), num(1))))),
+      diff: u => cdiv(num(1), mul(abs-of(u), sqrt-of(sub(pow(u, num(2)), num(1))))),
       integ: none,
-      diff-step: "d/dx arcsec(@) = @'/(@√(@²-1))",
+      diff-step: "d/dx arcsec(@) = @'/(|@|√(@²-1))",
       domain-note: "Real-domain derivative requires |@| > 1.",
     ),
   ),
@@ -759,4 +759,35 @@
     }
   }
   out
+}
+
+/// Public helper `fn-square-power-integral-rules`.
+///
+/// Canonical data for primitive patterns:
+///   ∫f(u)^2 dx = F(u) / u'  (when u' is constant w.r.t. integration variable)
+/// Used by both integration engine and step tracer to avoid hardcoded ladders.
+#let fn-square-power-integral-rules = (
+  sec: (
+    antideriv: u => tan-of(u),
+    rule: "Special rule: ∫sec²(u) dx = tan(u)/u'",
+  ),
+  csc: (
+    antideriv: u => neg(cot-of(u)),
+    rule: "Special rule: ∫csc²(u) dx = -cot(u)/u'",
+  ),
+  sech: (
+    antideriv: u => tanh-of(u),
+    rule: "Special rule: ∫sech²(u) dx = tanh(u)/u'",
+  ),
+  csch: (
+    antideriv: u => neg(coth-of(u)),
+    rule: "Special rule: ∫csch²(u) dx = -coth(u)/u'",
+  ),
+)
+
+/// Public helper `fn-square-power-integral-spec`.
+#let fn-square-power-integral-spec(name) = {
+  let cname = fn-canonical(name)
+  if cname == none { return none }
+  fn-square-power-integral-rules.at(cname, default: none)
 }

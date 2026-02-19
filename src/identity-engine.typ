@@ -7,6 +7,7 @@
 
 #import "expr.typ": *
 #import "truths/identities.typ": identity-rules
+#import "truths/function-registry.typ": fn-canonical
 
 /// Public helper `wild`.
 #let wild(name) = (type: "wild", name: name)
@@ -31,7 +32,7 @@
   if is-type(expr, "func") {
     // Keep ln of structured arguments "expensive" so ln identities remain active.
     let args = func-args(expr)
-    if args.len() == 1 and expr.name == "ln" and (is-type(args.at(0), "mul") or is-type(args.at(0), "div") or is-type(args.at(0), "pow")) {
+    if args.len() == 1 and fn-canonical(expr.name) == "ln" and (is-type(args.at(0), "mul") or is-type(args.at(0), "div") or is-type(args.at(0), "pow")) {
       return 8 + _identity-complexity(args.at(0))
     }
     let c = 3
@@ -243,12 +244,15 @@
 }
 
 /// Internal helper `_rewrite-current-node`.
-#let _rewrite-current-node(expr) = {
+#let _rewrite-current-node(expr, allow-domain-sensitive: false) = {
   let out = expr
   let changed = true
   while changed {
     changed = false
     for rule in identity-rules {
+      if rule.at("domain-sensitive", default: false) and not allow-domain-sensitive {
+        continue
+      }
       let bindings = _match-pattern(rule.lhs, out, (:))
       if bindings == none { continue }
       let cand = _instantiate-template(rule.rhs, bindings)
@@ -263,50 +267,70 @@
 }
 
 /// Internal helper `_rewrite-bottom-up`.
-#let _rewrite-bottom-up(expr) = {
+#let _rewrite-bottom-up(expr, allow-domain-sensitive: false) = {
   let cur = expr
   if is-type(cur, "neg") {
-    cur = neg(_rewrite-bottom-up(cur.arg))
+    cur = neg(_rewrite-bottom-up(cur.arg, allow-domain-sensitive: allow-domain-sensitive))
   } else if is-type(cur, "add") {
-    cur = add(_rewrite-bottom-up(cur.args.at(0)), _rewrite-bottom-up(cur.args.at(1)))
+    cur = add(
+      _rewrite-bottom-up(cur.args.at(0), allow-domain-sensitive: allow-domain-sensitive),
+      _rewrite-bottom-up(cur.args.at(1), allow-domain-sensitive: allow-domain-sensitive),
+    )
   } else if is-type(cur, "mul") {
-    cur = mul(_rewrite-bottom-up(cur.args.at(0)), _rewrite-bottom-up(cur.args.at(1)))
+    cur = mul(
+      _rewrite-bottom-up(cur.args.at(0), allow-domain-sensitive: allow-domain-sensitive),
+      _rewrite-bottom-up(cur.args.at(1), allow-domain-sensitive: allow-domain-sensitive),
+    )
   } else if is-type(cur, "pow") {
-    cur = pow(_rewrite-bottom-up(cur.base), _rewrite-bottom-up(cur.exp))
+    cur = pow(
+      _rewrite-bottom-up(cur.base, allow-domain-sensitive: allow-domain-sensitive),
+      _rewrite-bottom-up(cur.exp, allow-domain-sensitive: allow-domain-sensitive),
+    )
   } else if is-type(cur, "div") {
-    cur = cdiv(_rewrite-bottom-up(cur.num), _rewrite-bottom-up(cur.den))
+    cur = cdiv(
+      _rewrite-bottom-up(cur.num, allow-domain-sensitive: allow-domain-sensitive),
+      _rewrite-bottom-up(cur.den, allow-domain-sensitive: allow-domain-sensitive),
+    )
   } else if is-type(cur, "func") {
-    let args = func-args(cur).map(a => _rewrite-bottom-up(a))
+    let args = func-args(cur).map(a => _rewrite-bottom-up(a, allow-domain-sensitive: allow-domain-sensitive))
     cur = func(cur.name, ..args)
   } else if is-type(cur, "log") {
     cur = (
       type: "log",
-      base: _rewrite-bottom-up(cur.base),
-      arg: _rewrite-bottom-up(cur.arg),
+      base: _rewrite-bottom-up(cur.base, allow-domain-sensitive: allow-domain-sensitive),
+      arg: _rewrite-bottom-up(cur.arg, allow-domain-sensitive: allow-domain-sensitive),
     )
   } else if is-type(cur, "sum") {
     cur = (
       type: "sum",
-      body: _rewrite-bottom-up(cur.body),
+      body: _rewrite-bottom-up(cur.body, allow-domain-sensitive: allow-domain-sensitive),
       idx: cur.idx,
-      from: _rewrite-bottom-up(cur.from),
-      to: _rewrite-bottom-up(cur.to),
+      from: _rewrite-bottom-up(cur.from, allow-domain-sensitive: allow-domain-sensitive),
+      to: _rewrite-bottom-up(cur.to, allow-domain-sensitive: allow-domain-sensitive),
     )
   } else if is-type(cur, "prod") {
     cur = (
       type: "prod",
-      body: _rewrite-bottom-up(cur.body),
+      body: _rewrite-bottom-up(cur.body, allow-domain-sensitive: allow-domain-sensitive),
       idx: cur.idx,
-      from: _rewrite-bottom-up(cur.from),
-      to: _rewrite-bottom-up(cur.to),
+      from: _rewrite-bottom-up(cur.from, allow-domain-sensitive: allow-domain-sensitive),
+      to: _rewrite-bottom-up(cur.to, allow-domain-sensitive: allow-domain-sensitive),
     )
   } else if is-type(cur, "matrix") {
-    cur = (type: "matrix", rows: cur.rows.map(row => row.map(_rewrite-bottom-up)))
+    cur = (
+      type: "matrix",
+      rows: cur.rows.map(row => row.map(item => _rewrite-bottom-up(item, allow-domain-sensitive: allow-domain-sensitive))),
+    )
   } else if is-type(cur, "piecewise") {
-    cur = (type: "piecewise", cases: cur.cases.map(((e, c)) => (_rewrite-bottom-up(e), c)))
+    cur = (
+      type: "piecewise",
+      cases: cur.cases.map(((e, c)) => (_rewrite-bottom-up(e, allow-domain-sensitive: allow-domain-sensitive), c)),
+    )
   }
-  _rewrite-current-node(cur)
+  _rewrite-current-node(cur, allow-domain-sensitive: allow-domain-sensitive)
 }
 
 /// Public helper `apply-identities-once`.
-#let apply-identities-once(expr) = _rewrite-bottom-up(expr)
+#let apply-identities-once(expr, allow-domain-sensitive: false) = {
+  _rewrite-bottom-up(expr, allow-domain-sensitive: allow-domain-sensitive)
+}

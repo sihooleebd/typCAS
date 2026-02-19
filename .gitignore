@@ -2,6 +2,9 @@
 *.pdf
 *.png
 *.svg
+
+#Debug files
+.tmp_*.typ
 debug_*.typ
 
 # System files

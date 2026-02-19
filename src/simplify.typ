@@ -7,6 +7,7 @@
 #import "expr.typ": *
 #import "rational.typ": rat, rat-add, rat-div, rat-eq, rat-from-expr, rat-is-one, rat-is-zero, rat-mul, rat-neg, rat-sub, rat-to-expr
 #import "identities.typ": apply-identities-once
+#import "truths/function-registry.typ": fn-canonical
 
 // --- Internal helpers ---
 
@@ -38,6 +39,11 @@
 
 /// Internal helper `_expr-key`.
 #let _expr-key(e) = repr(e)
+
+/// Internal helper `_is-func-canonical`.
+#let _is-func-canonical(expr, canonical) = {
+  is-type(expr, "func") and fn-canonical(expr.name) == canonical
+}
 
 // Try to read a term as coefficient * var^degree for ordering.
 /// Internal helper `_var-degree`.
@@ -94,25 +100,25 @@
     sign = rat(-1, 1)
     t = t.arg
   }
-  if is-type(t, "func") and t.name == "ln" {
-    return (k: sign, arg: t.arg)
+  if _is-func-canonical(t, "ln") and func-arity(t) == 1 {
+    return (k: sign, arg: func-args(t).at(0))
   }
   if is-type(t, "mul") {
     let l = t.args.at(0)
     let r = t.args.at(1)
     let rl = _as-rat(l)
-    if rl != none and is-type(r, "func") and r.name == "ln" {
-      return (k: rat-mul(sign, rl), arg: r.arg)
+    if rl != none and _is-func-canonical(r, "ln") and func-arity(r) == 1 {
+      return (k: rat-mul(sign, rl), arg: func-args(r).at(0))
     }
     let rr = _as-rat(r)
-    if rr != none and is-type(l, "func") and l.name == "ln" {
-      return (k: rat-mul(sign, rr), arg: l.arg)
+    if rr != none and _is-func-canonical(l, "ln") and func-arity(l) == 1 {
+      return (k: rat-mul(sign, rr), arg: func-args(l).at(0))
     }
   }
   if is-type(t, "div") {
     let rd = _as-rat(t.den)
-    if rd != none and not rat-is-zero(rd) and is-type(t.num, "func") and t.num.name == "ln" {
-      return (k: rat-mul(sign, rat-div(rat(1, 1), rd)), arg: t.num.arg)
+    if rd != none and not rat-is-zero(rd) and _is-func-canonical(t.num, "ln") and func-arity(t.num) == 1 {
+      return (k: rat-mul(sign, rat-div(rat(1, 1), rd)), arg: func-args(t.num).at(0))
     }
   }
   none
@@ -299,8 +305,10 @@
   if not is-type(term, "pow") { return none }
   if not is-type(term.exp, "num") or term.exp.val != 2 { return none }
   if not is-type(term.base, "func") { return none }
-  if term.base.name == "sin" or term.base.name == "cos" {
-    return (kind: term.base.name, arg: term.base.arg)
+  if func-arity(term.base) != 1 { return none }
+  let kind = fn-canonical(term.base.name)
+  if kind == "sin" or kind == "cos" {
+    return (kind: kind, arg: func-args(term.base).at(0))
   }
   none
 }
@@ -732,50 +740,19 @@
   // --- Function ---
   if is-type(expr, "func") {
     let args = func-args(expr).map(_simplify-once)
-    if args.len() != 1 {
+    let unary = args.len() == 1
+    if not unary {
       return func(expr.name, ..args)
     }
     let a = args.at(0)
-    // exp(0) = 1
-    if expr.name == "exp" and _is-zero(a) { return num(1) }
-    // ln(1) = 0
-    if expr.name == "ln" and _is-one(a) { return num(0) }
-    // ln(e) = 1
-    if expr.name == "ln" and is-type(a, "const") and a.name == "e" { return num(1) }
-    // sin(0) = 0
-    if expr.name == "sin" and _is-zero(a) { return num(0) }
-    // cos(0) = 1
-    if expr.name == "cos" and _is-zero(a) { return num(1) }
-    // tan(0) = 0
-    if expr.name == "tan" and _is-zero(a) { return num(0) }
-    // sinh(0) = 0
-    if expr.name == "sinh" and _is-zero(a) { return num(0) }
-    // cosh(0) = 1
-    if expr.name == "cosh" and _is-zero(a) { return num(1) }
-    // tanh(0) = 0
-    if expr.name == "tanh" and _is-zero(a) { return num(0) }
 
     // --- Abs rules ---
     // |n| => abs(n) for numeric
-    if expr.name == "abs" and _is-num(a) {
+    if _is-func-canonical(expr, "abs") and _is-num(a) {
       return num(calc.abs(a.val))
     }
-    // |−x| => |x|
-    if expr.name == "abs" and is-type(a, "neg") {
-      return func("abs", a.arg)
-    }
-    // ||x|| => |x|
-    if expr.name == "abs" and is-type(a, "func") and a.name == "abs" {
-      return a
-    }
-    // ||u| / |v|| => |u/v|
-    if expr.name == "abs" and is-type(a, "div") {
-      if is-type(a.num, "func") and a.num.name == "abs" and is-type(a.den, "func") and a.den.name == "abs" {
-        return func("abs", cdiv(a.num.arg, a.den.arg))
-      }
-    }
 
-    return func(expr.name, a)
+    return func(expr.name, ..args)
   }
 
   // --- Log with base ---

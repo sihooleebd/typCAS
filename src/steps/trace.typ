@@ -10,6 +10,7 @@
 #import "../display.typ": cas-display
 #import "../solve.typ": solve as _solve-fn, solve-meta as _solve-meta-fn
 #import "../truths/calculus-rules.typ": calc-rules
+#import "../truths/function-registry.typ": fn-square-power-integral-spec
 #import "../helpers.typ": check-free-var as _check-free-var
 #import "../core/int-math.typ": int-factors as _int-factors
 #import "../core/expr-walk.typ": contains-var as _contains-var-core, expr-complexity as _expr-complexity-core
@@ -912,38 +913,22 @@
   // --- Power Rule ---
   if is-type(expr, "pow") and is-type(expr.exp, "num") and expr.exp.val == 2 and is-type(expr.base, "func") {
     let fname = expr.base.name
-    if fname == "sec" or fname == "csc" or fname == "sech" or fname == "csch" {
+    let square-rule = fn-square-power-integral-spec(fname)
+    if square-rule != none {
       if func-arity(expr.base) != 1 {
         return (integrate(expr, var), (_s-note("Function arity not supported by step tracer", expr: expr),), used_vars)
       }
       let u = func-args(expr.base).at(0)
       let du = simplify(diff(u, var))
       if not _contains-var(du, var) and not expr-eq(du, num(0)) {
-        let antideriv = if fname == "sec" {
-          tan-of(u)
-        } else if fname == "csc" {
-          neg(cot-of(u))
-        } else if fname == "sech" {
-          tanh-of(u)
-        } else {
-          neg(coth-of(u))
-        }
+        let antideriv = (square-rule.antideriv)(u)
         let raw = if is-type(du, "num") and du.val == 1 {
           antideriv
         } else {
           cdiv(antideriv, du)
         }
         let res = simplify(raw)
-        let rule = if fname == "sec" {
-          "Special rule: ∫sec²(u) dx = tan(u)/u'"
-        } else if fname == "csc" {
-          "Special rule: ∫csc²(u) dx = -cot(u)/u'"
-        } else if fname == "sech" {
-          "Special rule: ∫sech²(u) dx = tanh(u)/u'"
-        } else {
-          "Special rule: ∫csch²(u) dx = -coth(u)/u'"
-        }
-        return (res, (_s-header(res, rule),), used_vars)
+        return (res, (_s-header(res, square-rule.rule),), used_vars)
       }
     }
   }

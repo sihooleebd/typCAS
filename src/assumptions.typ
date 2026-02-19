@@ -7,6 +7,7 @@
 // =========================================================================
 
 #import "expr.typ": *
+#import "truths/function-registry.typ": fn-canonical
 
 /// Internal helper `_assume-get`.
 #let _assume-get(assumptions, var, key) = {
@@ -111,8 +112,9 @@
   if is-type(expr, "func") {
     let args = func-args(expr).map(a => _apply(a, assumptions))
     let unary = args.len() == 1
+    let cname = fn-canonical(expr.name)
 
-    if unary and expr.name == "abs" {
+    if unary and cname == "abs" {
       let arg = args.at(0)
       if _is-positive-var(arg, assumptions) {
         return arg
