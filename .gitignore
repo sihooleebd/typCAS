@@ -2,6 +2,7 @@
 *.pdf
 *.png
 *.svg
+debug_*.typ
 
 # System files
 .DS_Store

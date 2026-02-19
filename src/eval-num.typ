@@ -27,9 +27,10 @@
 
   // Constant
   if is-type(expr, "const") {
-    // allow constants to be shadowed by bindings (e.g. sum variable "i")
+    if expr.name == "i" { return none }
+    // allow constants to be shadowed by bindings (except reserved imaginary i)
     if expr.name in bindings { return bindings.at(expr.name) }
-    
+
     if expr.name == "e" { return calc.e }
     if expr.name == "pi" { return calc.pi }
     return none
@@ -96,6 +97,12 @@
     if expr.name == "arccsc" { return calc.asin(1.0 / a) }
     if expr.name == "arcsec" { return calc.acos(1.0 / a) }
     if expr.name == "arccot" { return calc.atan(1.0 / a) }
+    if expr.name == "asin" { return calc.asin(a) }
+    if expr.name == "acos" { return calc.acos(a) }
+    if expr.name == "atan" { return calc.atan(a) }
+    if expr.name == "acsc" { return calc.asin(1.0 / a) }
+    if expr.name == "asec" { return calc.acos(1.0 / a) }
+    if expr.name == "acot" { return calc.atan(1.0 / a) }
 
     // Hyperbolic
     if expr.name == "sinh" { return (calc.exp(a) - calc.exp(-a)) / 2.0 }
@@ -151,11 +158,54 @@
       if a == 1 or a == -1 { return none } // Denominators cannot be 0
       return 0.5 * calc.ln(arg)
     }
+    if expr.name == "asinh" {
+      let val = a + calc.sqrt(a * a + 1.0)
+      if val <= 0 { return none }
+      return calc.ln(val)
+    }
+    if expr.name == "acosh" {
+      if a < 1 { return none }
+      let val = a + calc.sqrt(a * a - 1.0)
+      if val <= 0 { return none }
+      return calc.ln(val)
+    }
+    if expr.name == "atanh" {
+      let arg = (1.0 + a) / (1.0 - a)
+      if arg <= 0 { return none }
+      if a <= -1 or a >= 1 { return none }
+      return 0.5 * calc.ln(arg)
+    }
+    if expr.name == "acsch" {
+      if a == 0 { return none }
+      let val = 1.0 / a + calc.sqrt(1.0 / (a * a) + 1.0)
+      if val <= 0 { return none }
+      return calc.ln(val)
+    }
+    if expr.name == "asech" {
+      if a <= 0 or a > 1 { return none }
+      let val = 1.0 / a + calc.sqrt(1.0 / (a * a) - 1.0)
+      if val <= 0 { return none }
+      return calc.ln(val)
+    }
+    if expr.name == "acoth" {
+      let arg = (a + 1.0) / (a - 1.0)
+      if arg <= 0 { return none }
+      if a == 1 or a == -1 { return none }
+      return 0.5 * calc.ln(arg)
+    }
 
     // Other
     if expr.name == "ln" {
       if a <= 0 { return none }
       return calc.ln(a)
+    }
+    if expr.name == "log2" {
+      if a <= 0 { return none }
+      return calc.ln(a) / calc.ln(2.0)
+    }
+    if expr.name == "log10" {
+      if a <= 0 { return none }
+      return calc.ln(a) / calc.ln(10.0)
     }
     if expr.name == "exp" { return calc.exp(a) }
     if expr.name == "abs" { return calc.abs(a) }
@@ -170,7 +220,6 @@
     if b == none or a == none or b <= 0 or a <= 0 { return none }
     return calc.ln(a) / calc.ln(b)
   }
-
 
 
   // Sum: evaluate by iteration

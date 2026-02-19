@@ -5,6 +5,7 @@
 #import "expr.typ": *
 
 // --- Operator precedence for parenthesization ---
+/// Internal helper `_prec`.
 #let _prec(expr) = {
   if is-type(expr, "num") or is-type(expr, "var") or is-type(expr, "const") { return 100 }
   if is-type(expr, "func") { return 90 }
@@ -24,6 +25,7 @@
 }
 
 // --- Helper: is expression "negative" at top level? ---
+/// Internal helper `_is-neg-term`.
 #let _is-neg-term(expr) = {
   if is-type(expr, "neg") { return true }
   if is-type(expr, "num") and expr.val < 0 { return true }
@@ -32,6 +34,7 @@
 }
 
 // --- Helper: negate a "negative" term to get its absolute form ---
+/// Internal helper `_abs-term`.
 #let _abs-term(expr) = {
   if is-type(expr, "neg") { return expr.arg }
   if is-type(expr, "num") and expr.val < 0 { return num(calc.abs(expr.val)) }
@@ -41,6 +44,30 @@
     return mul(pos-coeff, expr.args.at(1))
   }
   return expr
+}
+
+// Flatten nested multiplication into factors (for display rewrites only).
+/// Internal helper `_flatten-mul-display`.
+#let _flatten-mul-display(expr) = {
+  if is-type(expr, "mul") {
+    return _flatten-mul-display(expr.args.at(0)) + _flatten-mul-display(expr.args.at(1))
+  }
+  (expr,)
+}
+
+// Render variable names with optional single underscore subscript.
+// Example: "x_1" -> x_1, "theta" -> theta (italic).
+/// Internal helper `_display-var-name`.
+#let _display-var-name(name) = {
+  if "_" in name {
+    let parts = name.split("_")
+    if parts.len() == 2 and parts.at(0) != "" and parts.at(1) != "" {
+      let base = parts.at(0)
+      let sub = parts.at(1)
+      return $#math.italic(base)_(#math.italic(sub))$
+    }
+  }
+  $#math.italic(name)$
 }
 
 // --- Public API ---
@@ -58,18 +85,14 @@
 
   // Variable
   if is-type(expr, "var") {
-    let name = expr.name
-    // Render single-char vars as math italic, multi-char as upright
-    if name.len() == 1 {
-      return $#math.italic(name)$
-    }
-    return $upright(#name)$
+    return _display-var-name(expr.name)
   }
 
   // Constant
   if is-type(expr, "const") {
     if expr.name == "e" { return $e$ }
     if expr.name == "pi" { return $pi$ }
+    if expr.name == "i" { return $i$ }
     return $upright(#expr.name)$
   }
 
@@ -106,7 +129,7 @@
     // If right side is negation, render as subtraction
     if is-type(right-expr, "neg") {
       let inner-right = cas-display(right-expr.arg)
-      let wrapped = _paren(inner-right, right-expr.arg, 40)
+      let wrapped = _paren(inner-right, right-expr.arg, 41)
       return $#left - #wrapped$
     }
     // If right side is a negative number, render as subtraction
@@ -130,7 +153,9 @@
     let right = cas-display(r-expr)
 
     let left-w = _paren(left, l-expr, 50)
-    let right-w = _paren(right, r-expr, 51)
+    // Keep right-side fractions unparenthesized in products:
+    // show a/b ⋅ c/d instead of a/b ⋅ (c/d).
+    let right-w = if is-type(r-expr, "div") { right } else { _paren(right, r-expr, 51) }
 
     // Coefficient * something
     if is-type(l-expr, "num") {
@@ -148,6 +173,27 @@
 
   // Division / fraction
   if is-type(expr, "div") {
+    // Display (a*b)/n as a · (b/n) when numerator already contains
+    // a fraction factor, so inputs like 2/3 * 9/10 render as 2/3 · 9/10.
+    if is-type(expr.den, "num") and is-type(expr.num, "mul") {
+      let factors = _flatten-mul-display(expr.num)
+      if factors.len() >= 2 {
+        let has-frac = false
+        for f in factors {
+          if is-type(f, "div") { has-frac = true }
+        }
+        if has-frac {
+          let rebuilt = factors.at(0)
+          let i = 1
+          while i < factors.len() - 1 {
+            rebuilt = mul(rebuilt, factors.at(i))
+            i += 1
+          }
+          rebuilt = mul(rebuilt, cdiv(factors.at(factors.len() - 1), expr.den))
+          return cas-display(rebuilt)
+        }
+      }
+    }
     let n = cas-display(expr.num)
     let d = cas-display(expr.den)
     return $frac(#n, #d)$
@@ -186,39 +232,61 @@
     if fname == "arcsin" { return $arcsin(#arg)$ }
     if fname == "arccos" { return $arccos(#arg)$ }
     if fname == "arctan" { return $arctan(#arg)$ }
-    if fname == "arccsc" { return $upright("arccsc") lr((#arg))$ }
-    if fname == "arcsec" { return $upright("arcsec") lr((#arg))$ }
-    if fname == "arccot" { return $upright("arccot") lr((#arg))$ }
+    if fname == "arccsc" { return $op("arccsc") lr((#arg))$ }
+    if fname == "arcsec" { return $op("arcsec") lr((#arg))$ }
+    if fname == "arccot" { return $op("arccot") lr((#arg))$ }
+    if fname == "asin" { return $arcsin(#arg)$ }
+    if fname == "acos" { return $arccos(#arg)$ }
+    if fname == "atan" { return $arctan(#arg)$ }
+    if fname == "acsc" { return $op("arccsc") lr((#arg))$ }
+    if fname == "asec" { return $op("arcsec") lr((#arg))$ }
+    if fname == "acot" { return $op("arccot") lr((#arg))$ }
 
     // Hyperbolic
     if fname == "sinh" { return $sinh(#arg)$ }
     if fname == "cosh" { return $cosh(#arg)$ }
     if fname == "tanh" { return $tanh(#arg)$ }
-    if fname == "csch" { return $upright("csch") lr((#arg))$ }
-    if fname == "sech" { return $upright("sech") lr((#arg))$ }
-    if fname == "coth" { return $upright("coth") lr((#arg))$ }
+    if fname == "csch" { return $op("csch") lr((#arg))$ }
+    if fname == "sech" { return $op("sech") lr((#arg))$ }
+    if fname == "coth" { return $op("coth") lr((#arg))$ }
 
     // Inverse hyperbolic
-    if fname == "arcsinh" { return $upright("arcsinh") lr((#arg))$ }
-    if fname == "arccosh" { return $upright("arccosh") lr((#arg))$ }
-    if fname == "arctanh" { return $upright("arctanh") lr((#arg))$ }
-    if fname == "arccsch" { return $upright("arccsch") lr((#arg))$ }
-    if fname == "arcsech" { return $upright("arcsech") lr((#arg))$ }
-    if fname == "arccoth" { return $upright("arccoth") lr((#arg))$ }
+    if fname == "arcsinh" { return $op("arcsinh") lr((#arg))$ }
+    if fname == "arccosh" { return $op("arccosh") lr((#arg))$ }
+    if fname == "arctanh" { return $op("arctanh") lr((#arg))$ }
+    if fname == "arccsch" { return $op("arccsch") lr((#arg))$ }
+    if fname == "arcsech" { return $op("arcsech") lr((#arg))$ }
+    if fname == "arccoth" { return $op("arccoth") lr((#arg))$ }
+    if fname == "asinh" { return $op("arcsinh") lr((#arg))$ }
+    if fname == "acosh" { return $op("arccosh") lr((#arg))$ }
+    if fname == "atanh" { return $op("arctanh") lr((#arg))$ }
+    if fname == "acsch" { return $op("arccsch") lr((#arg))$ }
+    if fname == "asech" { return $op("arcsech") lr((#arg))$ }
+    if fname == "acoth" { return $op("arccoth") lr((#arg))$ }
 
     // Other
     if fname == "ln" { return $ln(#arg)$ }
+    if fname == "log2" { return $log_(2) lr((#arg))$ }
+    if fname == "log10" { return $log_(10) lr((#arg))$ }
     if fname == "exp" { return $e^(#arg)$ }
     if fname == "abs" { return $lr(|#arg|)$ }
+    if fname.starts-with("diff_") {
+      let v = fname.slice(5)
+      return $d/(d #math.italic(v)) (#arg)$
+    }
 
-    return $upright(#fname) lr((#arg))$
+    return $op(#fname) lr((#arg))$
   }
 
   // Integral node (unsolved integral)
   if is-type(expr, "integral") {
     let body = cas-display(expr.expr)
     let v = expr.var
-    return $integral #body thin d #math.italic(v)$
+    // Wrap in parens if integrand is a sum (so ∫(a+b) dx, not ∫a+b dx)
+    if is-type(expr.expr, "add") {
+      body = $lr((#body))$
+    }
+    return $integral #body thin #math.italic("d" + v)$
   }
 
   // Definite integral node (unsolved)
@@ -227,7 +295,7 @@
     let v = expr.var
     let lo = cas-display(expr.lo)
     let hi = cas-display(expr.hi)
-    return $integral_(#lo)^(#hi) #body thin d #math.italic(v)$
+    return $integral_(#lo)^(#hi) #body thin #math.italic("d" + v)$
   }
 
   // Logarithm with base
@@ -236,7 +304,6 @@
     let a = cas-display(expr.arg)
     return $log_(#b) lr((#a))$
   }
-
 
 
   // Summation
@@ -275,6 +342,20 @@
     let v = expr.var
     let a = cas-display(expr.to)
     return $lim_(#math.italic(v) arrow.r #a) #body$
+  }
+
+  // Piecewise
+  if is-type(expr, "piecewise") {
+    let entries = ()
+    for (case-expr, cond) in expr.cases {
+      let displayed = cas-display(case-expr)
+      if cond == none {
+        entries.push($#displayed & "otherwise"$)
+      } else {
+        entries.push($#displayed & "if" #cond$)
+      }
+    }
+    return math.cases(..entries)
   }
 
   // Fallback
