@@ -12,6 +12,27 @@
 /// Public helper `wild`.
 #let wild(name) = (type: "wild", name: name)
 
+/// Internal helper `_flatten-op`.
+#let _flatten-op(expr, op) = {
+  if is-type(expr, op) {
+    return _flatten-op(expr.args.at(0), op) + _flatten-op(expr.args.at(1), op)
+  }
+  (expr,)
+}
+
+/// Internal helper `_rebuild-op`.
+#let _rebuild-op(terms, op) = {
+  if terms.len() == 0 { return none }
+  if terms.len() == 1 { return terms.at(0) }
+  let out = terms.at(terms.len() - 1)
+  let i = terms.len() - 2
+  while i >= 0 {
+    out = if op == "add" { add(terms.at(i), out) } else { mul(terms.at(i), out) }
+    i -= 1
+  }
+  out
+}
+
 /// Internal helper `_identity-complexity`.
 #let _identity-complexity(expr) = {
   if is-type(expr, "wild") { return 1 }
@@ -103,6 +124,41 @@
     if s1 != none {
       let s2 = _match-pattern(pattern.args.at(1), expr.args.at(0), s1)
       if s2 != none { return s2 }
+    }
+
+    // Associative fallback for patterns with one wildcard side:
+    // allow that wildcard to capture the "rest" of a flattened sum/product.
+    let op = pattern.type
+    let terms = _flatten-op(expr, op)
+    if terms.len() >= 3 {
+      // pattern.left concrete vs one selected term; pattern.right wildcard captures rest
+      if is-type(pattern.args.at(1), "wild") {
+        for i in range(terms.len()) {
+          let b1 = _match-pattern(pattern.args.at(0), terms.at(i), bindings)
+          if b1 == none { continue }
+          let rest = ()
+          for j in range(terms.len()) {
+            if j != i { rest.push(terms.at(j)) }
+          }
+          let rest-expr = _rebuild-op(rest, op)
+          let b2 = _match-pattern(pattern.args.at(1), rest-expr, b1)
+          if b2 != none { return b2 }
+        }
+      }
+      // pattern.right concrete vs one selected term; pattern.left wildcard captures rest
+      if is-type(pattern.args.at(0), "wild") {
+        for i in range(terms.len()) {
+          let b1 = _match-pattern(pattern.args.at(1), terms.at(i), bindings)
+          if b1 == none { continue }
+          let rest = ()
+          for j in range(terms.len()) {
+            if j != i { rest.push(terms.at(j)) }
+          }
+          let rest-expr = _rebuild-op(rest, op)
+          let b2 = _match-pattern(pattern.args.at(0), rest-expr, b1)
+          if b2 != none { return b2 }
+        }
+      }
     }
     return none
   }

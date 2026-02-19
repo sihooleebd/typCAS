@@ -9,7 +9,7 @@ A lightweight Computer Algebra System (CAS) written in pure Typst.
 Import the library:
 
 ```typst
-#import "lib.typ": *
+#import "@preview/typcas:0.1.0":*
 ```
 
 Parse and simplify:
@@ -93,7 +93,7 @@ Core:
 
 Algebra:
 
-- `simplify(expr, expand: false, assumptions: none)`
+- `simplify(expr, expand: false, assumptions: none, allow-domain-sensitive: false)`
 - `expand(expr)`
 - `eval-expr(expr, bindings)`
 - `substitute(expr, var, repl)`
@@ -171,6 +171,7 @@ Compile the included suites:
 typst compile examples/test.typ examples/out/typcas-test.pdf --root .
 typst compile examples/test_new.typ examples/out/typcas-test-new.pdf --root .
 typst compile examples/cas_test_suite.typ examples/out/typcas-suite.pdf --root .
+typst compile examples/regression_check.typ examples/out/typcas-regression.pdf --root .
 ```
 
 ## License

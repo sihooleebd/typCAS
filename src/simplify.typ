@@ -244,6 +244,37 @@
       let (cn, bn) = _get-coeff-and-base(expr.num)
       return (rat-div(cn, rd), bn)
     }
+    // Pull rational coefficient out of multiplicative denominator:
+    //   x/(2*y) -> (1/2) * (x/y)
+    if is-type(expr.den, "mul") {
+      let den-factors = _flatten-mul(expr.den)
+      let den-coeff = rat(1, 1)
+      let den-symbolic = ()
+      for f in den-factors {
+        let f = if is-type(f, "neg") {
+          den-coeff = rat-neg(den-coeff)
+          f.arg
+        } else {
+          f
+        }
+        let rf = _as-rat(f)
+        if rf != none {
+          den-coeff = rat-mul(den-coeff, rf)
+        } else {
+          den-symbolic.push(f)
+        }
+      }
+      if den-symbolic.len() > 0 and not rat-is-zero(den-coeff) and not rat-eq(den-coeff, rat(1, 1)) {
+        let den-base = den-symbolic.at(0)
+        let i = 1
+        while i < den-symbolic.len() {
+          den-base = mul(den-base, den-symbolic.at(i))
+          i += 1
+        }
+        let (cn, bn) = _get-coeff-and-base(expr.num)
+        return (rat-div(cn, den-coeff), cdiv(bn, den-base))
+      }
+    }
   }
   (rat(1, 1), expr)
 }
@@ -484,8 +515,8 @@
     // x * -1 = neg(x)
     if _is-num(a) and a.val == -1 { return neg(b) }
     if _is-num(b) and b.val == -1 { return neg(a) }
-    // x * x = x^2 (but not when x is add — let distribution handle that)
-    if expr-eq(a, b) and not is-type(a, "add") { return pow(a, num(2)) }
+    // x * x = x^2 (including (u+v)*(u+v) for canonical square form)
+    if expr-eq(a, b) { return pow(a, num(2)) }
     // (u / v) * v = u and v * (u / v) = u
     if is-type(a, "div") and expr-eq(a.den, b) { return a.num }
     if is-type(b, "div") and expr-eq(b.den, a) { return b.num }
@@ -834,15 +865,179 @@
   return expr
 }
 
+/// Internal helper `_rebuild-add`.
+#let _rebuild-add(terms) = {
+  if terms.len() == 0 { return num(0) }
+  if terms.len() == 1 { return terms.at(0) }
+  let out = terms.at(terms.len() - 1)
+  let i = terms.len() - 2
+  while i >= 0 {
+    out = add(terms.at(i), out)
+    i -= 1
+  }
+  out
+}
+
+/// Internal helper `_canonicalize-mul`.
+/// Canonical structural normalization for products:
+/// - flatten nested products
+/// - normalize sign into rational coefficient
+/// - drop power-1 factors
+/// - sort symbolic factors deterministically
+#let _canonicalize-mul(expr) = {
+  let factors = _flatten-mul(expr)
+  let coeff = rat(1, 1)
+  let symbolic = ()
+
+  for f in factors {
+    let f0 = if is-type(f, "pow") and is-type(f.exp, "num") and f.exp.val == 1 {
+      f.base
+    } else {
+      f
+    }
+    let f1 = if is-type(f0, "neg") {
+      coeff = rat-neg(coeff)
+      f0.arg
+    } else {
+      f0
+    }
+    let rf = _as-rat(f1)
+    if rf != none {
+      coeff = rat-mul(coeff, rf)
+    } else {
+      symbolic.push(f1)
+    }
+  }
+
+  if rat-is-zero(coeff) { return num(0) }
+
+  let ordered = ()
+  for f in symbolic {
+    ordered = _insert-sorted(ordered, f)
+  }
+
+  if ordered.len() == 0 {
+    return rat-to-expr(coeff)
+  }
+
+  let out = if rat-is-one(coeff) {
+    ordered.at(0)
+  } else {
+    mul(rat-to-expr(coeff), ordered.at(0))
+  }
+  let i = 1
+  while i < ordered.len() {
+    out = mul(out, ordered.at(i))
+    i += 1
+  }
+  out
+}
+
+/// Internal helper `_canonicalize-structure`.
+/// Canonical pre-pass to normalize AC-like tree shape for add/mul/div.
+#let _canonicalize-structure(expr) = {
+  if is-type(expr, "num") or is-type(expr, "var") or is-type(expr, "const") {
+    return expr
+  }
+
+  if is-type(expr, "neg") {
+    let a = _canonicalize-structure(expr.arg)
+    if is-type(a, "num") { return num(-a.val) }
+    if is-type(a, "neg") { return a.arg }
+    return neg(a)
+  }
+
+  if is-type(expr, "add") {
+    let a = _canonicalize-structure(expr.args.at(0))
+    let b = _canonicalize-structure(expr.args.at(1))
+    let terms = _flatten-add(add(a, b))
+    let collected = _collapse-trig-pythagorean(_collect-like-terms(terms))
+    return _rebuild-add(collected)
+  }
+
+  if is-type(expr, "mul") {
+    return _canonicalize-mul(expr)
+  }
+
+  if is-type(expr, "div") {
+    let n = _canonicalize-structure(expr.num)
+    let d = _canonicalize-structure(expr.den)
+
+    // Keep denominator sign normalized.
+    if is-type(d, "neg") {
+      return _canonicalize-structure(neg(cdiv(n, d.arg)))
+    }
+    if is-type(d, "num") and d.val < 0 {
+      return _canonicalize-structure(neg(cdiv(n, num(-d.val))))
+    }
+    if is-type(n, "neg") and is-type(d, "neg") {
+      return _canonicalize-structure(cdiv(n.arg, d.arg))
+    }
+    return cdiv(n, d)
+  }
+
+  if is-type(expr, "pow") {
+    return pow(_canonicalize-structure(expr.base), _canonicalize-structure(expr.exp))
+  }
+
+  if is-type(expr, "func") {
+    let args = func-args(expr).map(_canonicalize-structure)
+    return func(expr.name, ..args)
+  }
+
+  if is-type(expr, "log") {
+    return (
+      type: "log",
+      base: _canonicalize-structure(expr.base),
+      arg: _canonicalize-structure(expr.arg),
+    )
+  }
+
+  if is-type(expr, "sum") {
+    return (
+      type: "sum",
+      body: _canonicalize-structure(expr.body),
+      idx: expr.idx,
+      from: _canonicalize-structure(expr.from),
+      to: _canonicalize-structure(expr.to),
+    )
+  }
+
+  if is-type(expr, "prod") {
+    return (
+      type: "prod",
+      body: _canonicalize-structure(expr.body),
+      idx: expr.idx,
+      from: _canonicalize-structure(expr.from),
+      to: _canonicalize-structure(expr.to),
+    )
+  }
+
+  if is-type(expr, "matrix") {
+    return (type: "matrix", rows: expr.rows.map(row => row.map(_canonicalize-structure)))
+  }
+
+  if is-type(expr, "piecewise") {
+    return (type: "piecewise", cases: expr.cases.map(((e, c)) => (_canonicalize-structure(e), c)))
+  }
+
+  expr
+}
+
 // --- Public API ---
 
 /// Simplify an expression by applying rules until a fixed point (max 10 passes).
-#let simplify(expr) = {
+///
+/// - allow-domain-sensitive: enables identities marked `domain-sensitive`.
+///   Keep `false` for branch-safe default behavior.
+#let simplify(expr, allow-domain-sensitive: false) = {
   let current = expr
   let max-passes = 10
   for _ in range(max-passes) {
     let next-core = _simplify-once(current)
-    let next = apply-identities-once(next-core)
+    let next-norm = _canonicalize-structure(next-core)
+    let next-id = apply-identities-once(next-norm, allow-domain-sensitive: allow-domain-sensitive)
+    let next = _canonicalize-structure(next-id)
     if expr-eq(next, current) { return current }
     current = next
   }

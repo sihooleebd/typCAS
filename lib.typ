@@ -100,6 +100,8 @@
 /// - expand: If true, expand products and powers before simplifying (default: false).
 /// - assumptions: Optional assumptions dictionary (from `assume(...)` or
 ///   `merge-assumptions(...)`) applied after simplification.
+/// - allow-domain-sensitive: If true, enables domain-sensitive identities
+///   (e.g. logarithm expansion/collapse identities that may need assumptions).
 /// - returns: A simplified CAS expression.
 ///
 /// example
@@ -108,12 +110,15 @@
 /// simplify($sqrt(x^2)$, assumptions: assume("x", real: true))  // => |x|
 /// simplify($(x+3)^2 + (x+3)$, expand: true)  // => x² + 7x + 12
 ///
-#let simplify(expr, expand: false, assumptions: none) = {
+#let simplify(expr, expand: false, assumptions: none, allow-domain-sensitive: false) = {
   let parsed = cas-parse(expr)
   if expand { parsed = _sim.expand(parsed) }
-  let out = _sim.simplify(parsed)
+  let out = _sim.simplify(parsed, allow-domain-sensitive: allow-domain-sensitive)
   if assumptions != none {
-    out = _sim.simplify(_assume.apply-assumptions(out, assumptions))
+    out = _sim.simplify(
+      _assume.apply-assumptions(out, assumptions),
+      allow-domain-sensitive: allow-domain-sensitive,
+    )
   }
   out
 }
