@@ -2,6 +2,32 @@
 
 All notable changes to `typcas` are documented in this file, including archived v1 history.
 
+## [0.2.2]
+
+### Fixed
+
+1. Integration constant `C` no longer appears before the antiderivative (e.g. `C + ∫ e^sin(x²) dx`). Root cause: `simplify(add(core, C))` could canonically reorder `C` ahead of compound terms. Fix: simplify the core first, then append `+ C` directly without passing the pair through the algebraic rewriter.
+
+### Added
+
+1. **Radical simplification**: `sqrt(12)` → `2√3`, `cbrt(24)` → `2·cbrt(3)`, and any `n^(p/q)` where perfect q-th power factors can be extracted from the integer base. Handled in the simplifier via prime factorization.
+2. **Double-angle & hyperbolic double-angle identities** in the identity rewriter:
+   - `2·sin(u)·cos(u)` → `sin(2u)`
+   - `cos²(u) - sin²(u)` → `cos(2u)` (plus `2cos²(u)-1` and `1-2sin²(u)` forms)
+   - `2·sinh(u)·cosh(u)` → `sinh(2u)`
+   - `cosh²(u) + sinh²(u)` → `cosh(2u)` (plus `2cosh²(u)-1` form)
+3. **Transcendental equation solving**: `solve` now handles equations of the form `f(u) = c` for `sin`, `cos`, `tan`, `sinh`, `tanh`, `exp`, `ln`, `arcsin`, `arccos`, `arctan`; plus `a^u = c` → `u = ln(c)/ln(a)`. After inversion, recurses into the simpler `u = value` equation.
+4. **Antiderivatives for inverse trig and logarithm**:
+   - `∫ arcsin(x) dx` = `x·arcsin(x) + √(1-x²)`
+   - `∫ arccos(x) dx` = `x·arccos(x) - √(1-x²)`
+   - `∫ arctan(x) dx` = `x·arctan(x) - ln(1+x²)/2`
+   - `∫ ln(x) dx` = `x·ln(x) - x`
+   - `∫ x·ln(x) dx` = `x²/2·ln(x) - x²/4`
+   - `∫ x·exp(x) dx` = `x·exp(x) - exp(x)`
+5. **Inverse-trig integral patterns** in the integration engine:
+   - `1/(1 + u²)` → `arctan(u)/u'` (with linear-u chain-rule scaling)
+   - `1/√(1 - u²)` → `arcsin(u)/u'`
+
 ## [0.2.1]
 
 ### Added

@@ -100,5 +100,5 @@
 
 #let integrate(expr, v) = {
   let core = _integrate-core(expr, v, 0)
-  integral-c-last(simplify(add(core, const-expr("C"))))
+  add(simplify(core), const-expr("C"))
 }

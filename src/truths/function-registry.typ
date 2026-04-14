@@ -181,6 +181,10 @@
       ),
       integ: args => (),
     ),
+    hints: (
+      by-parts-x: none,
+      direct-integral-var: v => add(mul(cvar(v), arcsin-of(cvar(v))), sqrt-of(sub(num(1), pow(cvar(v), num(2))))),
+    ),
     calculus: (diff: u => cdiv(num(1), sqrt-of(sub(num(1), pow(u, num(2))))), integ: none, diff-step: "d/dx arcsin(@)=@'/sqrt(1-@²)", domain-note: "Real-domain derivative requires -1 < @ < 1."),
   ),
   arccos: (
@@ -203,6 +207,10 @@
       ),
       integ: args => (),
     ),
+    hints: (
+      by-parts-x: none,
+      direct-integral-var: v => sub(mul(cvar(v), arccos-of(cvar(v))), sqrt-of(sub(num(1), pow(cvar(v), num(2))))),
+    ),
     calculus: (diff: u => neg(cdiv(num(1), sqrt-of(sub(num(1), pow(u, num(2)))))), integ: none, diff-step: "d/dx arccos(@)=-@'/sqrt(1-@²)", domain-note: "Real-domain derivative requires -1 < @ < 1."),
   ),
   arctan: (
@@ -210,6 +218,10 @@
     parse: (allow-implicit: true, allow-power-prefix: true),
     display: (render: args => $arctan(#args.at(0))$),
     eval: args => calc.atan(args.at(0)),
+    hints: (
+      by-parts-x: none,
+      direct-integral-var: v => sub(mul(cvar(v), arctan-of(cvar(v))), cdiv(ln-of(add(num(1), pow(cvar(v), num(2)))), num(2))),
+    ),
     calculus: (diff: u => cdiv(num(1), add(num(1), pow(u, num(2)))), integ: none, diff-step: "d/dx arctan(@)=@'/(1+@²)", domain-note: none),
   ),
   arccsc: (
@@ -432,7 +444,8 @@
       integ: args => (),
     ),
     hints: (
-      by-parts-x: none,
+      // ∫ x·ln(x) dx = x²/2·ln(x) - x²/4
+      by-parts-x: v => sub(mul(cdiv(pow(cvar(v), num(2)), num(2)), ln-of(cvar(v))), cdiv(pow(cvar(v), num(2)), num(4))),
       direct-integral-var: v => sub(mul(cvar(v), ln-of(cvar(v))), cvar(v)),
     ),
     calculus: (diff: u => cdiv(num(1), u), integ: none, diff-step: "d/dx ln(@)=@'/@", domain-note: "Real-domain derivative requires @ > 0."),

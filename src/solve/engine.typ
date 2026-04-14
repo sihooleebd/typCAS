@@ -13,6 +13,7 @@
 #import "../core/expr-walk.typ": contains-var as _contains-var-core, contains-const as _contains-const-core
 #import "../poly.typ": coeffs-to-expr as _coeffs-to-expr, poly-div as _poly-div, poly-gcd as _poly-gcd
 #import "../rational.typ": rat, rat-add, rat-div, rat-eq, rat-from-expr, rat-from-number, rat-is-one, rat-is-zero, rat-mul, rat-neg, rat-sqrt-exact, rat-sub, rat-to-expr, rat-to-float
+#import "../truths/function-registry.typ": fn-canonical as _fn-canonical
 
 // --- Internal helpers ---
 
@@ -1092,6 +1093,11 @@
     }
   }
 
+  // Catch-all: any expression that doesn't contain v is a constant term.
+  if not _contains-var-simple(e, v) {
+    return (a: num(0), b: e)
+  }
+
   none
 }
 
@@ -1161,6 +1167,86 @@
 }
 
 // =========================================================================
+// Transcendental solver
+// =========================================================================
+
+#let _is-const-wrt-v(expr, v) = not _contains-var-simple(expr, v)
+
+/// Try to isolate a single named function: returns (name, u, c) where name(u)=c, or none.
+#let _isolate-transcendental(expr, v) = {
+  let e = simplify(expr)
+
+  // f(u) = 0
+  if is-type(e, "func") and func-arity(e) == 1 and _contains-var-simple(e, v) {
+    return (name: _fn-canonical(e.name), u: func-args(e).at(0), c: num(0))
+  }
+
+  // add(f(u), const) or add(const, f(u)) — combined already = lhs - rhs
+  if is-type(e, "add") {
+    let a = e.args.at(0)
+    let b = e.args.at(1)
+    if is-type(a, "func") and func-arity(a) == 1 and _contains-var-simple(a, v) and _is-const-wrt-v(b, v) {
+      let cname = _fn-canonical(a.name)
+      if cname != none {
+        return (name: cname, u: func-args(a).at(0), c: simplify(neg(b)))
+      }
+    }
+    if is-type(b, "func") and func-arity(b) == 1 and _contains-var-simple(b, v) and _is-const-wrt-v(a, v) {
+      let cname = _fn-canonical(b.name)
+      if cname != none {
+        return (name: cname, u: func-args(b).at(0), c: simplify(neg(a)))
+      }
+    }
+  }
+
+  // neg(f(u)) = 0 → f(u) = 0
+  if is-type(e, "neg") and is-type(e.arg, "func") and func-arity(e.arg) == 1 and _contains-var-simple(e.arg, v) {
+    let cname = _fn-canonical(e.arg.name)
+    if cname != none {
+      return (name: cname, u: func-args(e.arg).at(0), c: num(0))
+    }
+  }
+
+  none
+}
+
+/// Try to isolate a^u = c form (constant base, variable exponent).
+#let _isolate-const-pow(expr, v) = {
+  let e = simplify(expr)
+
+  // pow(base, u) = 0 → skip (no real solution)
+  if is-type(e, "add") {
+    let a = e.args.at(0)
+    let b = e.args.at(1)
+    if is-type(a, "pow") and _is-const-wrt-v(a.base, v) and _contains-var-simple(a.exp, v) and _is-const-wrt-v(b, v) {
+      return (base: a.base, u: a.exp, c: simplify(neg(b)))
+    }
+    if is-type(b, "pow") and _is-const-wrt-v(b.base, v) and _contains-var-simple(b.exp, v) and _is-const-wrt-v(a, v) {
+      return (base: b.base, u: b.exp, c: simplify(neg(a)))
+    }
+  }
+
+  none
+}
+
+/// Map a function name to its inverse applied to c. Returns array of rhs values or none.
+#let _invert-func(fname, c) = {
+  if fname == "sin"    { return (arcsin-of(c), simplify(sub(const-pi, arcsin-of(c)))) }
+  if fname == "cos"    { return (arccos-of(c), simplify(neg(arccos-of(c)))) }
+  if fname == "tan"    { return (arctan-of(c),) }
+  if fname == "sinh"   { return (arcsinh-of(c),) }
+  if fname == "tanh"   { return (arctanh-of(c),) }
+  if fname == "exp"    { return (ln-of(c),) }
+  if fname == "ln"     { return (exp-of(c),) }
+  if fname == "arcsin" { return (sin-of(c),) }
+  if fname == "arccos" { return (cos-of(c),) }
+  if fname == "arctan" { return (tan-of(c),) }
+  if fname == "arcsinh" { return (func("sinh", c),) }
+  if fname == "arctanh" { return (func("tanh", c),) }
+  none
+}
+
+// =========================================================================
 // Public API
 // =========================================================================
 
@@ -1174,6 +1260,35 @@
   let meta = _solve-polynomial-metadata(combined, v)
   if meta != none and meta.roots.len() > 0 {
     return _unique-root-exprs(meta.roots)
+  }
+
+  // Transcendental: f(u) = c → u = f_inv(c), then solve u = f_inv(c) for v.
+  let iso = _isolate-transcendental(combined, v)
+  if iso != none {
+    let rhs-vals = _invert-func(iso.name, iso.c)
+    if rhs-vals != none {
+      let roots = ()
+      for rv in rhs-vals {
+        let new-combined = simplify(sub(iso.u, simplify(rv)))
+        // Recurse: solve the simpler equation
+        let sub-roots = solve(iso.u, simplify(rv), v)
+        for r in sub-roots { roots.push(r) }
+      }
+      if roots.len() > 0 { return roots }
+    }
+  }
+
+  // Exponential: a^u = c → u = ln(c)/ln(a), then solve for v.
+  let cp = _isolate-const-pow(combined, v)
+  if cp != none {
+    let c = cp.c
+    // a^u = 0 has no real solution; skip
+    let is-zero-c = is-type(simplify(c), "num") and simplify(c).val == 0
+    if not is-zero-c {
+      let new-rhs = simplify(cdiv(ln-of(c), ln-of(cp.base)))
+      let sub-roots = solve(cp.u, new-rhs, v)
+      if sub-roots.len() > 0 { return sub-roots }
+    }
   }
 
   // Non-polynomial fallback (linear/quadratic symbolic handling)

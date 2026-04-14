@@ -442,7 +442,7 @@
   let src = method.expr
   let key = "integ|" + repr(src) + "|" + var + "|" + repr(depth) + "|" + str(detail)
   if key in cache { return cache.at(key) }
-  let out = integral-c-last(simplify(integrate(src, var)))
+  let out = integrate(src, var)
   let lhs = _v-int(src, var)
   let recurse = _can-recurse(depth)
 
@@ -519,7 +519,7 @@
     } else {
       mul(coeff, (method.data.antideriv)(uvar))
     }
-    let primitive-u = integral-c-last(simplify(add(primitive-u-core, const-expr("C"))))
+    let primitive-u = add(simplify(primitive-u-core), const-expr("C"))
 
     if not recurse {
       let built = (_s-equation(lhs, transformed, rule: "Apply u-substitution", kind: "transform"),)

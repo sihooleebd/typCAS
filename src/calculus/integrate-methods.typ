@@ -18,6 +18,53 @@
 #let _is-zero(expr) = is-type(expr, "num") and expr.val == 0
 #let _is-one(expr) = is-type(expr, "num") and expr.val == 1
 
+/// Match denominator of the form (1 + u²) where u is linear in var.
+/// Returns (u, du) or none.
+#let _match-one-plus-u-squared(den, var) = {
+  if not is-type(den, "add") { return none }
+  let a = den.args.at(0)
+  let b = den.args.at(1)
+  let sq-part = if is-type(a, "num") and a.val == 1 { b }
+                else if is-type(b, "num") and b.val == 1 { a }
+                else { return none }
+  if not is-type(sq-part, "pow") { return none }
+  if not (is-type(sq-part.exp, "num") and sq-part.exp.val == 2) { return none }
+  let u = sq-part.base
+  if not _contains-var(u, var) { return none }
+  let du = simplify(diff(u, var))
+  if _is-zero(du) or not _is-const-wrt(du, var) { return none }
+  (u: u, du: du)
+}
+
+/// Match radicand of the form (1 - u²) where u is linear in var.
+/// Returns (u, du) or none.
+#let _match-one-minus-u-squared(inner, var) = {
+  if not is-type(inner, "add") { return none }
+  let a = inner.args.at(0)
+  let b = inner.args.at(1)
+  let (one-found, other) = if is-type(a, "num") and a.val == 1 { (true, b) }
+                            else if is-type(b, "num") and b.val == 1 { (true, a) }
+                            else { (false, none) }
+  if not one-found { return none }
+  // other should be neg(u²) or num(-1)*u²
+  let sq-part = if is-type(other, "neg") { other.arg }
+                else if is-type(other, "mul") {
+                  let l = other.args.at(0)
+                  let r = other.args.at(1)
+                  if is-type(l, "num") and l.val == -1 { r }
+                  else if is-type(r, "num") and r.val == -1 { l }
+                  else { return none }
+                }
+                else { return none }
+  if not is-type(sq-part, "pow") { return none }
+  if not (is-type(sq-part.exp, "num") and sq-part.exp.val == 2) { return none }
+  let u = sq-part.base
+  if not _contains-var(u, var) { return none }
+  let du = simplify(diff(u, var))
+  if _is-zero(du) or not _is-const-wrt(du, var) { return none }
+  (u: u, du: du)
+}
+
 #let _is-polynomial-power(expr, v) = {
   return (
     is-type(expr, "pow")
@@ -318,6 +365,41 @@
     if is-type(e.num, "num") and e.num.val == 1 and is-type(e.den, "var") and e.den.name == var {
       return _mk("reciprocal", e, var)
     }
+
+    // 1/(1 + u²) → arctan(u) / u'
+    if _is-one(simplify(e.num)) {
+      let den = simplify(e.den)
+      let m = _match-one-plus-u-squared(den, var)
+      if m != none {
+        let is-direct = is-type(m.u, "var") and m.u.name == var
+        return _mk("func-primitive", e, var, data: (u: m.u, du: m.du, antideriv: u => arctan-of(u), direct: is-direct))
+      }
+    }
+
+    // 1/sqrt(1 - u²) → arcsin(u) / u'
+    if _is-one(simplify(e.num)) {
+      let den = simplify(e.den)
+      if is-type(den, "pow") and is-type(den.exp, "div") {
+        let en = den.exp.num
+        let ed = den.exp.den
+        if is-type(en, "num") and en.val == 1 and is-type(ed, "num") and ed.val == 2 {
+          let m = _match-one-minus-u-squared(simplify(den.base), var)
+          if m != none {
+            let is-direct = is-type(m.u, "var") and m.u.name == var
+            return _mk("func-primitive", e, var, data: (u: m.u, du: m.du, antideriv: u => arcsin-of(u), direct: is-direct))
+          }
+        }
+      }
+      // Also handle den = (1 - u²)^(1/2) stored as float exponent 0.5
+      if is-type(den, "pow") and is-type(den.exp, "num") and den.exp.val == 0.5 {
+        let m = _match-one-minus-u-squared(simplify(den.base), var)
+        if m != none {
+          let is-direct = is-type(m.u, "var") and m.u.name == var
+          return _mk("func-primitive", e, var, data: (u: m.u, du: m.du, antideriv: u => arcsin-of(u), direct: is-direct))
+        }
+      }
+    }
+
     let pf = _partial-fractions-result(e, var)
     if pf != none {
       return _mk("partial-fraction", e, var, data: (result: pf))

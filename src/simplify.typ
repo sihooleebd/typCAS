@@ -528,17 +528,31 @@
 }
 
 /// Internal helper `_canonicalize-mul`.
+/// Numeric coefficient is always placed first; remaining factors are sorted by rank.
 #let _canonicalize-mul(expr) = {
   let factors = _flatten-mul(expr)
-  let sorted = ()
+  let coeff = rat(1, 1)
+  let symbolic = ()
   for f in factors {
+    let rf = _as-rat(f)
+    if rf != none {
+      coeff = rat-mul(coeff, rf)
+    } else {
+      symbolic.push(f)
+    }
+  }
+  let sorted = ()
+  for f in symbolic {
     sorted = _insert-sorted(sorted, f)
   }
-  if sorted.len() == 0 { return num(1) }
-  let out = sorted.at(0)
+  let all = ()
+  if not rat-is-one(coeff) { all.push(rat-to-expr(coeff)) }
+  for f in sorted { all.push(f) }
+  if all.len() == 0 { return rat-to-expr(coeff) }
+  let out = all.at(0)
   let i = 1
-  while i < sorted.len() {
-    out = mul(out, sorted.at(i))
+  while i < all.len() {
+    out = mul(out, all.at(i))
     i += 1
   }
   out
@@ -554,6 +568,45 @@
   }
   if is-type(expr, "mul") { return _canonicalize-mul(expr) }
   expr
+}
+
+// --- Radical simplification helper ---
+
+/// Factor n^(p/q): extract perfect q-th power factors.
+/// Returns coeff * inner^(p/q) expression, or none if nothing simplifies.
+#let _simplify-integer-radical(n-val, p, q) = {
+  if n-val <= 1 or q <= 1 { return none }
+  let remaining = n-val
+  let prime-exps = ()
+  let d = 2
+  while d * d <= remaining {
+    if calc.rem(remaining, d) == 0 {
+      let e = 0
+      while calc.rem(remaining, d) == 0 {
+        e += 1
+        remaining = int(remaining / d)
+      }
+      prime-exps.push((base: d, exp: e))
+    }
+    d += 1
+  }
+  if remaining > 1 { prime-exps.push((base: remaining, exp: 1)) }
+
+  // outer = perfect q-th part, inner = remainder
+  let outer = 1
+  let inner = 1
+  for fac in prime-exps {
+    let qi = int(fac.exp / q)
+    let ri = calc.rem(fac.exp, q)
+    outer = outer * calc.pow(fac.base, qi)
+    inner = inner * calc.pow(fac.base, ri)
+  }
+  if outer == 1 { return none }
+
+  let coeff-val = calc.pow(outer, p)
+  let exp-expr = if p == 1 { cdiv(num(1), num(q)) } else { cdiv(num(p), num(q)) }
+  if inner == 1 { return num(coeff-val) }
+  mul(num(coeff-val), pow(num(inner), exp-expr))
 }
 
 // --- Single-pass simplify ---
@@ -756,6 +809,16 @@
       }
       if b.val >= 0 {
         return num(calc.pow(b.val, e.val))
+      }
+    }
+
+    // Radical: n^(p/q) where n is a positive integer — extract perfect q-th powers.
+    if is-type(b, "num") and type(b.val) == int and b.val > 1 and is-type(e, "div") {
+      let rp = _as-rat(e.num)
+      let rq = _as-rat(e.den)
+      if rp != none and rq != none and rp.d == 1 and rq.d == 1 and rp.n > 0 and rq.n >= 2 {
+        let result = _simplify-integer-radical(b.val, rp.n, rq.n)
+        if result != none { return result }
       }
     }
 

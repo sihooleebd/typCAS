@@ -862,4 +862,67 @@
     label: "u/|u| = sign(u)",
     domain-sensitive: true,
   ),
+  // Double-angle: 2·sin(u)·cos(u) → sin(2u)
+  (
+    id: "double-angle-sin",
+    priority: 124,
+    lhs: mul(num(2), mul(func("sin", (type: "wild", name: "u")), func("cos", (type: "wild", name: "u")))),
+    rhs: func("sin", mul(num(2), (type: "wild", name: "u"))),
+    label: "2sin(u)cos(u) = sin(2u)",
+    domain-sensitive: false,
+  ),
+  // Double-angle: cos²(u) - sin²(u) → cos(2u)
+  (
+    id: "double-angle-cos-diff",
+    priority: 125,
+    lhs: add(pow(func("cos", (type: "wild", name: "u")), num(2)), neg(pow(func("sin", (type: "wild", name: "u")), num(2)))),
+    rhs: func("cos", mul(num(2), (type: "wild", name: "u"))),
+    label: "cos²(u) - sin²(u) = cos(2u)",
+    domain-sensitive: false,
+  ),
+  // Double-angle: 2·cos²(u) - 1 → cos(2u)
+  (
+    id: "double-angle-cos-2cos2",
+    priority: 126,
+    lhs: add(mul(num(2), pow(func("cos", (type: "wild", name: "u")), num(2))), num(-1)),
+    rhs: func("cos", mul(num(2), (type: "wild", name: "u"))),
+    label: "2cos²(u) - 1 = cos(2u)",
+    domain-sensitive: false,
+  ),
+  // Double-angle: 1 - 2·sin²(u) → cos(2u)
+  (
+    id: "double-angle-cos-1-2sin2",
+    priority: 127,
+    lhs: add(num(1), neg(mul(num(2), pow(func("sin", (type: "wild", name: "u")), num(2))))),
+    rhs: func("cos", mul(num(2), (type: "wild", name: "u"))),
+    label: "1 - 2sin²(u) = cos(2u)",
+    domain-sensitive: false,
+  ),
+  // Double-angle hyperbolic: 2·sinh(u)·cosh(u) → sinh(2u)
+  (
+    id: "double-angle-sinh",
+    priority: 128,
+    lhs: mul(num(2), mul(func("sinh", (type: "wild", name: "u")), func("cosh", (type: "wild", name: "u")))),
+    rhs: func("sinh", mul(num(2), (type: "wild", name: "u"))),
+    label: "2sinh(u)cosh(u) = sinh(2u)",
+    domain-sensitive: false,
+  ),
+  // Double-angle hyperbolic: cosh²(u) + sinh²(u) → cosh(2u)
+  (
+    id: "double-angle-cosh-sum",
+    priority: 129,
+    lhs: add(pow(func("cosh", (type: "wild", name: "u")), num(2)), pow(func("sinh", (type: "wild", name: "u")), num(2))),
+    rhs: func("cosh", mul(num(2), (type: "wild", name: "u"))),
+    label: "cosh²(u) + sinh²(u) = cosh(2u)",
+    domain-sensitive: false,
+  ),
+  // Double-angle hyperbolic: 2·cosh²(u) - 1 → cosh(2u)
+  (
+    id: "double-angle-cosh-2cosh2",
+    priority: 130,
+    lhs: add(mul(num(2), pow(func("cosh", (type: "wild", name: "u")), num(2))), num(-1)),
+    rhs: func("cosh", mul(num(2), (type: "wild", name: "u"))),
+    label: "2cosh²(u) - 1 = cosh(2u)",
+    domain-sensitive: false,
+  ),
 )
