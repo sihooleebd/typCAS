@@ -85,6 +85,9 @@
   _expr-key(a) < _expr-key(b)
 }
 
+/// Internal helper: true for a natural-log node `log(e, ·)`.
+#let _is-ln-node(t) = is-type(t, "log") and is-const-e(t.base)
+
 /// Internal helper `_extract-k-ln`.
 #let _extract-k-ln(term) = {
   let t = term
@@ -93,26 +96,26 @@
     sign = rat(-1, 1)
     t = t.arg
   }
-  if _is-func-canonical(t, "ln") and func-arity(t) == 1 {
-    return (k: sign, arg: func-args(t).at(0))
+  if _is-ln-node(t) {
+    return (k: sign, arg: t.arg)
   }
   if is-type(t, "mul") {
     let l = t.args.at(0)
     let r = t.args.at(1)
     let rl = _as-rat(l)
-    if rl != none and _is-func-canonical(r, "ln") and func-arity(r) == 1 {
-      return (k: rat-mul(sign, rl), arg: func-args(r).at(0))
+    if rl != none and _is-ln-node(r) {
+      return (k: rat-mul(sign, rl), arg: r.arg)
     }
     let rr = _as-rat(r)
-    if rr != none and _is-func-canonical(l, "ln") and func-arity(l) == 1 {
-      return (k: rat-mul(sign, rr), arg: func-args(l).at(0))
+    if rr != none and _is-ln-node(l) {
+      return (k: rat-mul(sign, rr), arg: l.arg)
     }
   }
   if is-type(t, "div") {
     let rd = _as-rat(t.den)
-    if rd != none and not rat-is-zero(rd) and _is-func-canonical(t.num, "ln") and func-arity(t.num) == 1 {
+    if rd != none and not rat-is-zero(rd) and _is-ln-node(t.num) {
       let inv = rat-div(rat(1, 1), rd)
-      if inv != none { return (k: rat-mul(sign, inv), arg: func-args(t.num).at(0)) }
+      if inv != none { return (k: rat-mul(sign, inv), arg: t.num.arg) }
     }
   }
   none
@@ -1072,7 +1075,27 @@
   }
 
   if is-type(expr, "log") {
-    return log-of(_expand-once(expr.base), _expand-once(expr.arg))
+    let base = _expand-once(expr.base)
+    let arg = _expand-once(expr.arg)
+    // Product rule: log_b(x·y) = log_b(x) + log_b(y)
+    if is-type(arg, "mul") {
+      return add(
+        _expand-once(log-of(base, arg.args.at(0))),
+        _expand-once(log-of(base, arg.args.at(1))),
+      )
+    }
+    // Quotient rule: log_b(x/y) = log_b(x) - log_b(y)
+    if is-type(arg, "div") {
+      return add(
+        _expand-once(log-of(base, arg.num)),
+        neg(_expand-once(log-of(base, arg.den))),
+      )
+    }
+    // Power rule: log_b(x^n) = n·log_b(x)
+    if is-type(arg, "pow") {
+      return mul(arg.exp, _expand-once(log-of(base, arg.base)))
+    }
+    return log-of(base, arg)
   }
 
   if is-type(expr, "sum") {

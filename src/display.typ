@@ -177,7 +177,16 @@
   }
 
   if is-type(expr, "log") {
-    return $log_(#cas-display(expr.base)) lr((#cas-display(expr.arg)))$
+    // Pretty-print the canonical log node back to conventional notation.
+    let base = expr.base
+    let arg = cas-display(expr.arg)
+    if is-type(base, "const") and base.at("name", default: none) == "e" {
+      return $ln lr((#arg))$
+    }
+    if is-type(base, "num") and base.val == 10 {
+      return $log lr((#arg))$
+    }
+    return $log_(#cas-display(base)) lr((#arg))$
   }
 
   if is-type(expr, "integral") {

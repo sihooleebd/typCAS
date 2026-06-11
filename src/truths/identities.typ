@@ -13,16 +13,6 @@
 
 #import "../expr.typ": *
 
-/// Internal helper `_log-one-rule`.
-#let _log-one-rule(id, priority, fname, label) = (
-  id: id,
-  priority: priority,
-  lhs: func(fname, num(1)),
-  rhs: num(0),
-  label: label + "(1) = 0",
-  domain-sensitive: false,
-)
-
 /// Public helper `identity-rules`.
 #let identity-rules = (
   // Trig Pythagorean
@@ -601,18 +591,8 @@
     label: "exp(0) = 1",
     domain-sensitive: false,
   ),
-  _log-one-rule("ln-one", 94, "ln", "ln"),
-  _log-one-rule("log-one", 95, "log", "log"),
-  _log-one-rule("log2-one", 96, "log2", "log₂"),
-  _log-one-rule("log10-one", 97, "log10", "log₁₀"),
-  (
-    id: "ln-e",
-    priority: 98,
-    lhs: func("ln", const-expr("e")),
-    rhs: num(1),
-    label: "ln(e) = 1",
-    domain-sensitive: false,
-  ),
+  // log_b(1)=0 and ln(e)=1 are covered by the structural rules `log-arg-one`
+  // and `log-arg-base` (all logs are now `log(base, arg)` nodes).
   (
     id: "sin-zero",
     priority: 99,
@@ -709,10 +689,11 @@
     label: "||u|/|v|| = |u/v|",
     domain-sensitive: false,
   ),
+  // exp/ln cancellation (ln is now the structural node log(e, ·)).
   (
     id: "exp-ln",
     priority: 108,
-    lhs: func("exp", func("ln", (type: "wild", name: "u"))),
+    lhs: func("exp", log-of(const-e, (type: "wild", name: "u"))),
     rhs: (type: "wild", name: "u"),
     label: "exp(ln(u)) = u",
     domain-sensitive: false,
@@ -720,7 +701,7 @@
   (
     id: "ln-exp",
     priority: 109,
-    lhs: func("ln", func("exp", (type: "wild", name: "u"))),
+    lhs: log-of(const-e, func("exp", (type: "wild", name: "u"))),
     rhs: (type: "wild", name: "u"),
     label: "ln(exp(u)) = u",
     domain-sensitive: false,
@@ -728,7 +709,7 @@
   (
     id: "ln-recip-pair",
     priority: 109,
-    lhs: add(func("ln", cdiv((type: "wild", name: "a"), (type: "wild", name: "b"))), func("ln", cdiv((type: "wild", name: "b"), (type: "wild", name: "a")))),
+    lhs: add(log-of(const-e, cdiv((type: "wild", name: "a"), (type: "wild", name: "b"))), log-of(const-e, cdiv((type: "wild", name: "b"), (type: "wild", name: "a")))),
     rhs: num(0),
     label: "ln(a/b) + ln(b/a) = 0",
     domain-sensitive: false,
@@ -736,36 +717,13 @@
   (
     id: "ln-recip-unit",
     priority: 109,
-    lhs: add(func("ln", (type: "wild", name: "a")), func("ln", cdiv(num(1), (type: "wild", name: "a")))),
+    lhs: add(log-of(const-e, (type: "wild", name: "a")), log-of(const-e, cdiv(num(1), (type: "wild", name: "a")))),
     rhs: num(0),
     label: "ln(a) + ln(1/a) = 0",
     domain-sensitive: false,
   ),
-  // Log structural rewrites (kept for compatibility; domain-sensitive metadata only).
-  (
-    id: "ln-mul",
-    priority: 110,
-    lhs: func("ln", mul((type: "wild", name: "a"), (type: "wild", name: "b"))),
-    rhs: add(func("ln", (type: "wild", name: "a")), func("ln", (type: "wild", name: "b"))),
-    label: "ln(a·b) = ln(a) + ln(b)",
-    domain-sensitive: true,
-  ),
-  (
-    id: "ln-div",
-    priority: 111,
-    lhs: func("ln", cdiv((type: "wild", name: "a"), (type: "wild", name: "b"))),
-    rhs: sub(func("ln", (type: "wild", name: "a")), func("ln", (type: "wild", name: "b"))),
-    label: "ln(a/b) = ln(a) - ln(b)",
-    domain-sensitive: true,
-  ),
-  (
-    id: "ln-pow",
-    priority: 112,
-    lhs: func("ln", pow((type: "wild", name: "a"), (type: "wild", name: "n"))),
-    rhs: mul((type: "wild", name: "n"), func("ln", (type: "wild", name: "a"))),
-    label: "ln(a^n) = n·ln(a)",
-    domain-sensitive: true,
-  ),
+  // ln(a·b), ln(a/b), ln(a^n) rewrites are covered for every base by the
+  // structural `log-product` / `log-quotient` / `log-power` rules.
   (
     id: "log1p-expm1",
     priority: 113,
@@ -924,5 +882,62 @@
     rhs: func("cosh", mul(num(2), (type: "wild", name: "u"))),
     label: "2cosh²(u) - 1 = cosh(2u)",
     domain-sensitive: false,
+  ),
+  // =====================================================================
+  // Logarithm identities (structural `log` node, e.g. `log_b(x)`)
+  // =====================================================================
+  // log_b(1) = 0  (always valid where the log is defined)
+  (
+    id: "log-arg-one",
+    priority: 131,
+    lhs: log-of((type: "wild", name: "b"), num(1)),
+    rhs: num(0),
+    label: "log_b(1) = 0",
+    domain-sensitive: false,
+  ),
+  // log_b(b) = 1  (always valid where the log is defined)
+  (
+    id: "log-arg-base",
+    priority: 132,
+    lhs: log-of((type: "wild", name: "b"), (type: "wild", name: "b")),
+    rhs: num(1),
+    label: "log_b(b) = 1",
+    domain-sensitive: false,
+  ),
+  // Power rule: log_b(x^n) = n·log_b(x)
+  // Domain-sensitive: RHS requires x > 0, whereas log_b(x^n) is defined
+  // wherever x^n > 0 (e.g. x < 0 with even n).
+  (
+    id: "log-power",
+    priority: 133,
+    lhs: log-of((type: "wild", name: "b"), pow((type: "wild", name: "x"), (type: "wild", name: "n"))),
+    rhs: mul((type: "wild", name: "n"), log-of((type: "wild", name: "b"), (type: "wild", name: "x"))),
+    label: "log_b(x^n) = n·log_b(x)",
+    domain-sensitive: true,
+  ),
+  // Product rule (contraction): log_b(x) + log_b(y) = log_b(x·y)
+  // Domain-sensitive: RHS only requires x·y > 0 (e.g. both negative).
+  (
+    id: "log-product",
+    priority: 134,
+    lhs: add(
+      log-of((type: "wild", name: "b"), (type: "wild", name: "x")),
+      log-of((type: "wild", name: "b"), (type: "wild", name: "y")),
+    ),
+    rhs: log-of((type: "wild", name: "b"), mul((type: "wild", name: "x"), (type: "wild", name: "y"))),
+    label: "log_b(x) + log_b(y) = log_b(x y)",
+    domain-sensitive: true,
+  ),
+  // Quotient rule (contraction): log_b(x) - log_b(y) = log_b(x/y)
+  (
+    id: "log-quotient",
+    priority: 135,
+    lhs: add(
+      log-of((type: "wild", name: "b"), (type: "wild", name: "x")),
+      neg(log-of((type: "wild", name: "b"), (type: "wild", name: "y"))),
+    ),
+    rhs: log-of((type: "wild", name: "b"), cdiv((type: "wild", name: "x"), (type: "wild", name: "y"))),
+    label: "log_b(x) - log_b(y) = log_b(x/y)",
+    domain-sensitive: true,
   ),
 )

@@ -51,13 +51,8 @@
     return 4 + _identity-complexity(expr.base) + _identity-complexity(expr.arg)
   }
   if is-type(expr, "func") {
-    // Keep ln of structured arguments "expensive" so ln identities remain active.
-    let args = func-args(expr)
-    if args.len() == 1 and fn-canonical(expr.name) == "ln" and (is-type(args.at(0), "mul") or is-type(args.at(0), "div") or is-type(args.at(0), "pow")) {
-      return 8 + _identity-complexity(args.at(0))
-    }
     let c = 3
-    for a in args {
+    for a in func-args(expr) {
       c += _identity-complexity(a)
     }
     return c

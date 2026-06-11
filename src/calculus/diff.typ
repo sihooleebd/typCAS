@@ -68,7 +68,13 @@
     }
 
     if is-type(expr, "log") {
-      // d/dx log_b(u) = d/dx ln(u)/ln(b)
+      // Base case: d/dx ln(u) = u'/u. Required to terminate — the general
+      // branch below rewrites log_b(u) → ln(u)/ln(b) = log_e(u)/log_e(b),
+      // which would otherwise re-enter this branch forever.
+      if is-const-e(expr.base) {
+        return simplify(cdiv(_diff-core(expr.arg, v, memo), expr.arg))
+      }
+      // General base: d/dx log_b(u) = d/dx [ln(u)/ln(b)]
       return simplify(_diff-core(cdiv(ln-of(expr.arg), ln-of(expr.base)), v, memo))
     }
 

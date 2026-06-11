@@ -1,4 +1,4 @@
-# typcas (v 0.2.1)
+# typcas (v 0.2.3)
 
 Task-centric CAS for Typst with Builder-style orchestration and structured results.
 

@@ -285,13 +285,13 @@
       return (cvar(name), pos + 1)
     }
 
-    // compatibility: log x => ln(x)
+    // bare `log x` => common log, base 10: log_10(x)
     if name == "log" and not (next != none and next.type == "lparen") {
       let q = pos + 1
       let arg-t = _peek(tokens, q)
       if arg-t != none and (arg-t.type == "num" or arg-t.type == "ident" or arg-t.type == "lparen") {
         let (arg, q2) = (p.power)(tokens, q, p)
-        return (func("ln", arg), q2)
+        return (log-of(num(10), arg), q2)
       }
     }
 
@@ -363,7 +363,8 @@
         if _peek(tokens, q) == none or _peek(tokens, q).type != "rparen" {
           panic("cas-parse: malformed log call, expected ')'")
         }
-        return (func("ln", first), q + 1)
+        // single-arg `log(x)` => common log, base 10
+        return (log-of(num(10), first), q + 1)
       }
 
       let (args, q) = _parse-call-args(tokens, pos + 1, p)

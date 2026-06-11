@@ -142,6 +142,10 @@
       and func-args(expr).len() == 1
       and is-type(expr.arg, "var")
       and expr.arg.name == v
+  ) or (
+    is-type(expr, "log")
+      and is-type(expr.arg, "var")
+      and expr.arg.name == v
   )
 }
 
@@ -200,6 +204,12 @@
 
 #let _registry-by-parts-x(func-expr, v) = {
   if not _is-unary-on-var(func-expr, v) { return none }
+  if is-type(func-expr, "log") {
+    // ∫ x·log_b(x) dx = [ (x²/2)·ln(x) − x²/4 ] / ln(b)
+    let core = sub(mul(cdiv(pow(cvar(v), num(2)), num(2)), ln-of(cvar(v))), cdiv(pow(cvar(v), num(2)), num(4)))
+    if is-const-e(func-expr.base) { return core }
+    return cdiv(core, ln-of(func-expr.base))
+  }
   let spec = fn-spec(func-expr.name)
   if spec == none { return none }
   let hints = spec.at("hints", default: none)
@@ -211,6 +221,12 @@
 
 #let _direct-primitive-on-var(func-expr, v) = {
   if not _is-unary-on-var(func-expr, v) { return none }
+  if is-type(func-expr, "log") {
+    // ∫ log_b(x) dx = (x·ln(x) − x) / ln(b)
+    let core = sub(mul(cvar(v), ln-of(cvar(v))), cvar(v))
+    if is-const-e(func-expr.base) { return core }
+    return cdiv(core, ln-of(func-expr.base))
+  }
   let spec = fn-spec(func-expr.name)
   if spec == none { return none }
   let hints = spec.at("hints", default: none)
@@ -404,6 +420,15 @@
     if pf != none {
       return _mk("partial-fraction", e, var, data: (result: pf))
     }
+  }
+
+  // ∫ log_b(x) dx = (x·ln(x) − x) / ln(b)   (= x·ln(x) − x for base e)
+  if is-type(e, "log") and is-type(e.arg, "var") and e.arg.name == var {
+    let prim = sub(mul(cvar(var), ln-of(cvar(var))), cvar(var))
+    if is-const-e(e.base) {
+      return _mk("by-parts", e, var, data: (result: prim))
+    }
+    return _mk("by-parts", e, var, data: (result: cdiv(prim, ln-of(e.base))))
   }
 
   if is-type(e, "func") and func-args(e).len() == 1 {

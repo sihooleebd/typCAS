@@ -591,11 +591,22 @@
   }
 
   if is-type(expr, "log") {
-    return merge-restrictions(
-      merge-restrictions(_collect-structural(expr.base), _collect-structural(expr.arg)),
+    // A constant base (e, 10, 2, …) is trivially a valid base — don't surface
+    // "base > 0" / "base ≠ 1" caveats for it (e.g. ln, log₁₀, log₂).
+    let known-base = (
+      (is-type(expr.base, "num") and expr.base.val > 0 and expr.base.val != 1)
+        or is-const-e(expr.base)
+        or (is-type(expr.base, "const") and expr.base.at("name", default: none) == "pi")
+    )
+    let base-rs = if known-base { () } else {
       (
         mk-restriction(expr.base, ">", num(0), source: "op:log", stage: "defined", note: "Log base must be positive."),
         mk-restriction(expr.base, "!=", num(1), source: "op:log", stage: "defined", note: "Log base cannot equal 1."),
+      )
+    }
+    return merge-restrictions(
+      merge-restrictions(_collect-structural(expr.base), _collect-structural(expr.arg)),
+      base-rs + (
         mk-restriction(expr.arg, ">", num(0), source: "op:log", stage: "defined", note: "Log argument must be positive."),
       ),
     )

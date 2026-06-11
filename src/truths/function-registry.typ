@@ -430,7 +430,7 @@
   ),
 
   ln: (
-    name: "ln", aliases: ("log",), arity: 1,
+    name: "ln", aliases: (), arity: 1,
     parse: (allow-implicit: true, allow-power-prefix: true),
     display: (render: args => $ln(#args.at(0))$),
     eval: args => {

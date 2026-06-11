@@ -18,6 +18,9 @@
 #let const-e = const-expr("e")
 #let const-pi = const-expr("pi")
 
+/// True when a node is the constant e (Euler's number).
+#let is-const-e(x) = is-type(x, "const") and x.at("name", default: none) == "e"
+
 /// Coerce plain numbers to numeric nodes.
 #let _coerce(x) = if type(x) == int or type(x) == float { num(x) } else { x }
 
@@ -79,7 +82,10 @@
 #let arcsech-of(arg) = func("arcsech", arg)
 #let arccoth-of(arg) = func("arccoth", arg)
 
-#let ln-of(arg) = func("ln", arg)
+// Canonical logarithm node: every logarithm is `log(base, arg)`.
+// Natural log is `log(e, arg)`; `ln-of` is a thin alias.
+#let log-of(base, arg) = (type: "log", base: _coerce(base), arg: _coerce(arg))
+#let ln-of(arg) = log-of(const-e, arg)
 #let exp-of(arg) = func("exp", arg)
 #let sqrt-of(arg) = pow(_coerce(arg), cdiv(num(1), num(2)))
 #let abs-of(arg) = func("abs", _coerce(arg))
@@ -107,8 +113,6 @@
   }
   out
 }
-
-#let log-of(base, arg) = (type: "log", base: _coerce(base), arg: _coerce(arg))
 
 #let csum(body, idx, from, to) = (
   type: "sum",
@@ -224,6 +228,13 @@
   }
   if is-type(expr, "func") {
     let args = func-args(expr).map(a => _normalize-int-constant(a, bound-vars))
+    // Canonicalize pure base-logarithms to the structural `log(base, arg)` node.
+    // (`log1p`/`exp` are not pure base-logs and stay as func nodes.)
+    if args.len() == 1 {
+      if expr.name == "ln" { return log-of(const-e, args.at(0)) }
+      if expr.name == "log2" { return log-of(num(2), args.at(0)) }
+      if expr.name == "log10" { return log-of(num(10), args.at(0)) }
+    }
     return func(expr.name, ..args)
   }
   if is-type(expr, "log") {

@@ -1172,6 +1172,29 @@
 
 #let _is-const-wrt-v(expr, v) = not _contains-var-simple(expr, v)
 
+/// Try to isolate a structural log: returns (base, u, c) where log_base(u)=c, or none.
+/// Inverse: log_b(u)=c → u = b^c.
+#let _isolate-log(expr, v) = {
+  let e = simplify(expr)
+  if is-type(e, "log") and _contains-var-simple(e, v) {
+    return (base: e.base, u: e.arg, c: num(0))
+  }
+  if is-type(e, "add") {
+    let a = e.args.at(0)
+    let b = e.args.at(1)
+    if is-type(a, "log") and _contains-var-simple(a, v) and _is-const-wrt-v(b, v) {
+      return (base: a.base, u: a.arg, c: simplify(neg(b)))
+    }
+    if is-type(b, "log") and _contains-var-simple(b, v) and _is-const-wrt-v(a, v) {
+      return (base: b.base, u: b.arg, c: simplify(neg(a)))
+    }
+  }
+  if is-type(e, "neg") and is-type(e.arg, "log") and _contains-var-simple(e.arg, v) {
+    return (base: e.arg.base, u: e.arg.arg, c: num(0))
+  }
+  none
+}
+
 /// Try to isolate a single named function: returns (name, u, c) where name(u)=c, or none.
 #let _isolate-transcendental(expr, v) = {
   let e = simplify(expr)
@@ -1260,6 +1283,14 @@
   let meta = _solve-polynomial-metadata(combined, v)
   if meta != none and meta.roots.len() > 0 {
     return _unique-root-exprs(meta.roots)
+  }
+
+  // Logarithm: log_b(u) = c → u = b^c, then solve for v.
+  let logiso = _isolate-log(combined, v)
+  if logiso != none {
+    let new-rhs = simplify(pow(logiso.base, logiso.c))
+    let sub-roots = solve(logiso.u, new-rhs, v)
+    if sub-roots.len() > 0 { return sub-roots }
   }
 
   // Transcendental: f(u) = c → u = f_inv(c), then solve u = f_inv(c) for v.
